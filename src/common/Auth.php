@@ -102,31 +102,46 @@ class Auth
 
     /** Identitas dari sesi web atau header Authorization: Bearer (untuk mobile nanti). */
     public static function identify()
-    {
-        if (self::$resolved) {
-            return self::$profile;
-        }
-        self::$resolved = true;
-        self::start();
+{
+    if (self::$resolved) {
+        return self::$profile;
+    }
+    self::$resolved = true;
+    self::start();
 
-        $userId = null;
-        if (!empty($_SESSION['user_id'])) {
-            $userId = (int)$_SESSION['user_id'];
-        } else {
-            $header = '';
-            if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
-                $header = $_SERVER['HTTP_AUTHORIZATION'];
-            } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
-                $header = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
-            }
-            if (preg_match('/Bearer\s+(\S+)/', $header, $m)) {
-                $db = new DBConnection();
-                $row = $db->selectOne('SELECT id FROM users WHERE api_token = ? AND is_active = 1', array($m[1]));
-                if ($row) {
-                    $userId = (int)$row['id'];
-                }
+    // TAMBAHAN: Deteksi login jalur lama (tabel admins)  
+    if (!empty($_SESSION['admin_name']) && empty($_SESSION['user_id'])) {
+        self::$profile = [
+            'id' => 1,
+            'username' => $_SESSION['admin_name'],
+            'role' => 'hr',
+            'display_name' => $_SESSION['admin_name'],
+            'employee_id' => null 
+        ];
+        return self::$profile;
+    }
+    
+    $userId = null;
+    if (!empty($_SESSION['user_id'])) {
+        $userId = (int)$_SESSION['user_id'];
+    } else {
+        // ... (SISA KODE ASLI TEMAN ANDA DI BAWAH INI BIARKAN SAJA) ...
+        $header = '';
+        if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+            $header = $_SERVER['HTTP_AUTHORIZATION'];
+        } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $header = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
+        if (preg_match('/Bearer\s+(\S+)/', $header, $m)) {
+            $db = new DBConnection();
+            $row = $db->selectOne('SELECT id FROM users WHERE api_token = ? AND is_active = 1', array($m[1]));
+            if ($row) {
+                $userId = (int)$row['id'];
             }
         }
+    }
+    
+    // ... (LANJUTKAN SISA KODE ASLI DI BAWAHNYA) ...
 
         if (!$userId && !empty($_SESSION['admin_name'])) {
             $userId = self::legacySessionUpgrade();
