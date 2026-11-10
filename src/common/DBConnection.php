@@ -98,6 +98,53 @@ class DBConnection
 
         return $response;
     }
+
+    function getPdo() {
+        return $this->conn;
+    }
+
+    // Jalankan statement dengan parameter terikat (prepared statement).
+    function run($query, array $params = array()) {
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute($params);
+        return $stmt;
+    }
+
+    function selectAll($query, array $params = array()) {
+        $stmt = $this->run($query, $params);
+        $stmt->setFetchMode(PDO::FETCH_ASSOC);
+        return $stmt->fetchAll();
+    }
+
+    function selectOne($query, array $params = array()) {
+        $stmt = $this->run($query, $params);
+        $stmt->setFetchMode(PDO::FETCH_ASSOC);
+        $row = $stmt->fetch();
+        return $row === false ? null : $row;
+    }
+
+    function insert($query, array $params = array()) {
+        $this->run($query, $params);
+        return (int)$this->conn->lastInsertId();
+    }
+
+    function beginTransaction() {
+        if (!$this->conn->inTransaction()) {
+            $this->conn->beginTransaction();
+        }
+    }
+
+    function commit() {
+        if ($this->conn->inTransaction()) {
+            $this->conn->commit();
+        }
+    }
+
+    function rollBack() {
+        if ($this->conn->inTransaction()) {
+            $this->conn->rollBack();
+        }
+    }
 }
 
 //$dbConn=new DBConnection();
