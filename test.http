@@ -1,1 +1,1 @@
-GET http://localhost/HumanResourceManagementSystem/src/api/riwayat_cuti.php?employee_id=2
+GET http://localhost/HumanResourceManagementSystem/src/api/laporan_absensi.php
