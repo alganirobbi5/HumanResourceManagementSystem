@@ -1,4 +1,6 @@
 <?php
+date_default_timezone_set('Asia/Jakarta'); // <-- TAMBAHKAN BARIS INI
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST");
@@ -28,7 +30,8 @@ if (!empty($data->employee_id) && !empty($data->latitude) && !empty($data->longi
         http_response_code(201);
         echo json_encode([
             "status" => "success", 
-            "message" => "Absen berhasil disimpan"
+            "message" => "Absen berhasil disimpan",
+            "jam_masuk" => $waktu_absen // <-- Tambahkan ini agar dikirim ke Flutter
         ]);
         
     } catch (Exception $e) {
