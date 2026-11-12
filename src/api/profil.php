@@ -12,7 +12,7 @@ if ($employee_id) {
         $pdo = new PDO("mysql:host=localhost;dbname=hrm;charset=utf8mb4", "root", "");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // 1. Ambil data profil dasar
+        // 1. Coba cari di tabel employees (untuk Karyawan)
         $query = "SELECT e.first_name, e.last_name, e.email, u.username, u.role 
                   FROM employees e 
                   JOIN users u ON e.id = u.employee_id 
@@ -25,21 +25,41 @@ if ($employee_id) {
         if ($profil) {
             $profil['nama_lengkap'] = trim($profil['first_name'] . ' ' . $profil['last_name']);
             
-            // 2. Ambil sisa cuti dari tabel employee_leaves (yang sudah di-rename)
+            // Ambil sisa cuti
             $stmtCuti = $pdo->prepare("SELECT remaining_leave FROM employee_leaves WHERE employee_id = ? LIMIT 1");
             $stmtCuti->execute([$employee_id]);
             $cuti = $stmtCuti->fetch(PDO::FETCH_ASSOC);
-            
-            // Jika data cuti ditemukan, gunakan. Jika tidak, isi 0.
             $profil['sisa_cuti'] = $cuti ? (int)$cuti['remaining_leave'] : 0;
 
             http_response_code(200);
             echo json_encode(["status" => "success", "data" => $profil]);
-        } else {
-            http_response_code(404);
-            echo json_encode(["status" => "error", "message" => "Profil tidak ditemukan"]);
+            exit;
         }
-        
+
+        // 2. JIKA TIDAK KETEMU DI EMPLOYEES, COBA CARI DI TABEL ADMINS (Untuk HR)
+        $stmtAdmin = $pdo->prepare("SELECT * FROM admins WHERE id = ? LIMIT 1");
+        $stmtAdmin->execute([$employee_id]);
+        $admin = $stmtAdmin->fetch(PDO::FETCH_ASSOC);
+
+        if ($admin) {
+            http_response_code(200);
+            echo json_encode([
+                "status" => "success", 
+                "data" => [
+                    "nama_lengkap" => $admin['name'],
+                    "email" => "admin@perusahaan.com", // Dummy karena tabel admin tidak punya email
+                    "username" => $admin['name'],
+                    "role" => "hr",
+                    "sisa_cuti" => 12 // HR biasanya punya kuota penuh
+                ]
+            ]);
+            exit;
+        }
+
+        // Jika tidak ada di keduanya
+        http_response_code(404);
+        echo json_encode(["status" => "error", "message" => "Profil tidak ditemukan"]);
+
     } catch (PDOException $e) {
         http_response_code(500);
         echo json_encode(["status" => "error", "message" => "Gagal: " . $e->getMessage()]);
