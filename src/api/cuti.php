@@ -17,8 +17,8 @@ if (!empty($data->employee_id) && !empty($data->start_date) && !empty($data->end
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         // Gunakan tanda tanya (?) untuk created_at, lalu kirim time() di array
-        $query = "INSERT INTO leaves (employee_id, type, leav_from, leav_to, total_leav, staus, created_at) 
-                  VALUES (?, ?, ?, ?, 1, 1, ?)";
+        $query = "INSERT INTO leaves (employee_id, type, leave_from, leave_to, total_leave, status, created_at) 
+          VALUES (?, ?, ?, ?, 1, 1, ?)";
                   
         $stmt = $pdo->prepare($query);
         $stmt->execute([

@@ -5,7 +5,6 @@ header("Access-Control-Allow-Methods: GET");
 
 require_once __DIR__ . '/../common/DBConnection.php';
 
-// Ambil employee_id dari URL (contoh: riwayat_cuti.php?employee_id=2)
 $employee_id = isset($_GET['employee_id']) ? $_GET['employee_id'] : null;
 
 if ($employee_id) {
@@ -13,8 +12,8 @@ if ($employee_id) {
         $pdo = new PDO("mysql:host=localhost;dbname=hrm;charset=utf8mb4", "root", "");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // Ambil data cuti berdasarkan employee_id
-        $stmt = $pdo->prepare("SELECT id, type, leav_from, leav_to, staus FROM leaves WHERE employee_id = ? ORDER BY id DESC");
+        // MENGGUNAKAN NAMA KOLOM YANG SUDAH DIPERBAIKI (leave_from, leave_to, status)
+        $stmt = $pdo->prepare("SELECT id, type, leave_from, leave_to, status FROM leaves WHERE employee_id = ? ORDER BY id DESC");
         $stmt->execute([$employee_id]);
         $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
