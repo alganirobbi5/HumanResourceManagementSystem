@@ -12,10 +12,10 @@ class DBConnection
 
     function __construct($params=array()) {
         $this->conn = false;
-        $this->host = 'localhost';
-        $this->user = 'root';
-        $this->password = '';
-        $this->dbName = 'hrm';
+        $this->host = '31.97.199.58'; // <-- IP Server
+        $this->user = 'HRIS';         // <-- Username DB
+        $this->password = 'Admin@2026'; // <-- Password DB
+        $this->dbName = 'HRIS';       // <-- Nama Database
         $this->port = '3306';
         $this->connect();
     }

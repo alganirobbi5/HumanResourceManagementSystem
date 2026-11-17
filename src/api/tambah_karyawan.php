@@ -9,7 +9,7 @@ $data = json_decode(file_get_contents("php://input"));
 
 if (!empty($data->first_name) && !empty($data->username) && !empty($data->password) && !empty($data->email)) {
     try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hrm;charset=utf8mb4", "root", "");
+        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         // 1. Cek apakah username sudah dipakai

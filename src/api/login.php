@@ -12,7 +12,7 @@ if (!empty($data->username) && !empty($data->password)) {
     $password = $data->password;
 
     try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hrm;charset=utf8mb4", "root", "");
+        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         // 1. CEK KE TABEL USERS (KARYAWAN / HR BARU)

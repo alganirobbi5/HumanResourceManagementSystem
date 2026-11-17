@@ -13,7 +13,7 @@ $data = json_decode(file_get_contents("php://input"));
 if (!empty($data->employee_id) && !empty($data->start_date) && !empty($data->end_date) && !empty($data->reason)) {
     try {
         // GUNAKAN PDO MANUAL
-        $pdo = new PDO("mysql:host=localhost;dbname=hrm;charset=utf8mb4", "root", "");
+        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         // Gunakan tanda tanya (?) untuk created_at, lalu kirim time() di array

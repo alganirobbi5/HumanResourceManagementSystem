@@ -8,9 +8,9 @@ require_once __DIR__ . '/../common/DBConnection.php';
 $data = json_decode(file_get_contents("php://input"));
 
 // Validasi data yang dikirim
-if (!empty($data->leave_id) && isset($data->status)) {
+if (!empty($data->leave_id) && isset($data->status)) {  
     try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hrm;charset=utf8mb4", "root", "");
+        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         // Update status cuti (1 = Pending, 2 = Disetujui, 3 = Ditolak)
