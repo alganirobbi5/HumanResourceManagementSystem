@@ -1,9 +1,9 @@
-POST http://31.97.199.58/HRM/src/api/absen_pulang.php
+POST http://31.97.199.58/HRM/src/api/tambah_lokasi.php
 Content-Type: application/json
 
 {
-    "employee_id": 2,
-    "latitude": "-6.200000",
+    "nama_lokasi": "Kebun Wo",
+    "latitude": "6.200000",
     "longitude": "106.816666",
-    "waktu_lokal": "2026-11-17 17:00:00"
+    "radius_meter": 100
 }

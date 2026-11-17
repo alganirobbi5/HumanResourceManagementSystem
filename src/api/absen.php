@@ -20,6 +20,48 @@ if (!empty($data->employee_id) && !empty($data->latitude) && !empty($data->longi
             $tanggal = date('Y-m-d');
             $waktu_sekarang = date('H:i:s');
         }
+
+                // --- LOGIKA MULTI-GEOFENCING ---
+        
+        // 1. Ambil semua lokasi kantor/kebun dari database
+        $stmtLokasi = $pdo->query("SELECT * FROM office_locations");
+        $lokasi_kantor = $stmtLokasi->fetchAll(PDO::FETCH_ASSOC);
+
+        $lat_karyawan = (float)$data->latitude;
+        $lng_karyawan = (float)$data->longitude;
+        $is_dalam_radius = false;
+        $pesan_error_lokasi = "";
+
+        // 2. Looping cek jarak ke setiap lokasi
+        foreach ($lokasi_kantor as $lokasi) {
+            $kantor_lat = (float)$lokasi['latitude'];
+            $kantor_lng = (float)$lokasi['longitude'];
+            $radius_maksimal = (int)$lokasi['radius_meter'];
+
+            // Rumus Haversine
+            $theta = $kantor_lng - $lng_karyawan;
+            $dist = sin(deg2rad($kantor_lat)) * sin(deg2rad($lat_karyawan)) + cos(deg2rad($kantor_lat)) * cos(deg2rad($lat_karyawan)) * cos(deg2rad($theta));
+            $dist = acos($dist);
+            $dist = rad2deg($dist);
+            $miles = $dist * 60 * 1.1515;
+            $jarak_meter = $miles * 1609.344;
+
+            // Jika karyawan berada di dalam radius salah satu lokasi
+            if ($jarak_meter <= $radius_maksimal) {
+                $is_dalam_radius = true;
+                break; // Keluar dari loop, tidak perlu cek lokasi lain
+            }
+        }
+
+        // 3. Jika tidak ada satu pun lokasi yang cocok
+        if (!$is_dalam_radius) {
+            http_response_code(400);
+            echo json_encode([
+                "status" => "error", 
+                "message" => "Anda berada di luar area absensi yang diizinkan."
+            ]);
+            exit;
+        }
         
         $cekAbsen = $pdo->prepare("SELECT id FROM attendances WHERE employee_id = ? AND date = ?");
         $cekAbsen->execute([$data->employee_id, $tanggal]);
