@@ -1,10 +1,9 @@
-POST http://localhost/HumanResourceManagementSystem/src/api/tambah_karyawan.php
+POST http://31.97.199.58/HRM/src/api/absen_pulang.php
 Content-Type: application/json
 
 {
-    "first_name": "Andi",
-    "last_name": "Wijaya",
-    "username": "andi",
-    "password": "123456",
-    "email": "andi@contoh.com"
+    "employee_id": 2,
+    "latitude": "-6.200000",
+    "longitude": "106.816666",
+    "waktu_lokal": "2026-11-17 17:00:00"
 }

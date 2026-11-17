@@ -15,7 +15,7 @@ class DBConnection
         $this->host = '31.97.199.58'; // <-- IP Server
         $this->user = 'HRIS';         // <-- Username DB
         $this->password = 'Admin@2026'; // <-- Password DB
-        $this->dbName = 'HRIS';       // <-- Nama Database
+        $this->dbName = 'hris';       // <-- Nama Database
         $this->port = '3306';
         $this->connect();
     }

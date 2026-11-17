@@ -9,7 +9,7 @@ $employee_id = isset($_GET['employee_id']) ? $_GET['employee_id'] : null;
 
 if ($employee_id) {
     try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+        $pdo = new PDO("mysql:host=localhost;dbname=hrm;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         // MENGGUNAKAN NAMA KOLOM YANG SUDAH DIPERBAIKI (leave_from, leave_to, status)

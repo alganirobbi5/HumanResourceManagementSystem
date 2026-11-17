@@ -1,0 +1,59 @@
+<?php
+header("Access-Control-Allow-Origin: *");
+header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Methods: POST");
+
+require_once __DIR__ . '/../common/DBConnection.php';
+
+$data = json_decode(file_get_contents("php://input"));
+
+if (!empty($data->employee_id) && !empty($data->waktu_lokal)) {
+    try {
+        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+        // Ambil tanggal dan waktu dari HP
+        $tanggal = date('Y-m-d', strtotime($data->waktu_lokal));
+        $waktu_sekarang = date('H:i:s', strtotime($data->waktu_lokal));
+
+        // Cari data absen hari ini (berdasarkan employee_id dan date)
+        $stmt = $pdo->prepare("SELECT id, clock_in, clock_out FROM attendances WHERE employee_id = ? AND date = ? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$data->employee_id, $tanggal]);
+        $absen = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($absen) {
+            // Jika clock_out masih 00:00:00
+            if ($absen['clock_out'] == '00:00:00' || $absen['clock_out'] == null) {
+                // Hitung selisih jam
+                $clock_in = new DateTime($absen['clock_in']);
+                $clock_out = new DateTime($waktu_sekarang);
+                $diff = $clock_in->diff($clock_out);
+                $total_jam = $diff->h + ($diff->i / 60);
+
+                // Update
+                $update = $pdo->prepare("UPDATE attendances SET clock_out = ?, total_work = ? WHERE id = ?");
+                $update->execute([$waktu_sekarang, $total_jam, $absen['id']]);
+
+                http_response_code(200);
+                echo json_encode([
+                    "status" => "success", 
+                    "message" => "Absen pulang berhasil",
+                    "total_jam_kerja" => round($total_jam, 2) . " jam"
+                ]);
+            } else {
+                http_response_code(400);
+                echo json_encode(["status" => "error", "message" => "Anda sudah absen pulang hari ini."]);
+            }
+        } else {
+            http_response_code(400);
+            echo json_encode(["status" => "error", "message" => "Anda belum absen masuk hari ini untuk tanggal $tanggal."]);
+        }
+    } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => "MYSQL ERROR: " . $e->getMessage()]);
+    }
+} else {
+    http_response_code(400);
+    echo json_encode(["status" => "error", "message" => "Data tidak lengkap"]);
+}
+?>
