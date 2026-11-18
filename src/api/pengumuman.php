@@ -6,8 +6,8 @@ try {
     $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Mengambil data dari tabel notices (sesuaikan nama tabel dengan database Anda)
-    $stmt = $pdo->query("SELECT id, title, message, created_at FROM notices ORDER BY created_at DESC");
+    // Ambil data dari tabel notices menggunakan nama kolom yang benar
+    $stmt = $pdo->query("SELECT id, subject AS title, description AS message, notice_date AS created_at FROM notices ORDER BY id DESC");
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode(["status" => "success", "data" => $data]);

@@ -10,12 +10,19 @@ if (!empty($data->title) && !empty($data->message)) {
         $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // Sesuaikan nama kolom dengan tabel 'notices' di database VPS
-        $query = "INSERT INTO notices (title, message, created_at) VALUES (?, ?, NOW())";
+        // Sesuaikan dengan struktur tabel 'notices' di VPS
+        $tanggal = date('Y-m-d');
+        $waktu = date('H:i:s');
+        
+        $query = "INSERT INTO notices (subject, description, notice_date, notice_time, status, insert_by, insert_date) 
+                  VALUES (?, ?, ?, ?, 1, 'HR', NOW())";
+                  
         $stmt = $pdo->prepare($query);
         $stmt->execute([
-            $data->title,
-            $data->message
+            $data->title,       // Dari Flutter masuk ke 'subject'
+            $data->message,     // Dari Flutter masuk ke 'description'
+            $tanggal,
+            $waktu
         ]);
 
         http_response_code(201);
