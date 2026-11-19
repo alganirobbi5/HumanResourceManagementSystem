@@ -1,84 +1,101 @@
 <?php
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET");
 
-require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
 
-$employee_id = isset($_GET['employee_id']) ? $_GET['employee_id'] : null;
+$user = Auth::requireApi();
+$employee_id_from_client = isset($_GET['employee_id']) ? $_GET['employee_id'] : null;
 
-if ($employee_id) {
-    try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-        // 1. Coba cari di tabel employees (untuk Karyawan)
-        $query = "SELECT e.first_name, e.last_name, e.email, u.username, u.role, u.avatar 
-                  FROM employees e 
-                  JOIN users u ON e.id = u.employee_id 
-                  WHERE e.id = ? LIMIT 1";
-                  
-        $stmt = $pdo->prepare($query);
-        $stmt->execute([$employee_id]);
-        $profil = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($profil) {
-            $profil['nama_lengkap'] = trim($profil['first_name'] . ' ' . $profil['last_name']);
-            
-            // Ambil sisa cuti
-            $stmtCuti = $pdo->prepare("SELECT remaining_leave FROM employee_leaves WHERE employee_id = ? LIMIT 1");
-            $stmtCuti->execute([$employee_id]);
-            $cuti = $stmtCuti->fetch(PDO::FETCH_ASSOC);
-            $profil['sisa_cuti'] = $cuti ? (int)$cuti['remaining_leave'] : 0;
-
-            http_response_code(200);
-            echo json_encode(["status" => "success", "data" => $profil]);
-            exit;
-        }
-
-        // 2. JIKA TIDAK KETEMU DI EMPLOYEES, COBA CARI DI TABEL ADMINS (Untuk HR)
-        $stmtAdmin = $pdo->prepare("SELECT * FROM admins WHERE id = ? LIMIT 1");
-        $stmtAdmin->execute([$employee_id]);
-        $admin = $stmtAdmin->fetch(PDO::FETCH_ASSOC);
-
-        if ($admin) {
-            $avatar = null;
-            try {
-                $stmtAvatar = $pdo->prepare("SELECT avatar FROM users WHERE username = ? LIMIT 1");
-                $stmtAvatar->execute([$admin['name']]);
-                $rowAvatar = $stmtAvatar->fetch(PDO::FETCH_ASSOC);
-                if ($rowAvatar) {
-                    $avatar = $rowAvatar['avatar'];
-                }
-            } catch (PDOException $e) {
-                $avatar = null;
-            }
-
-            http_response_code(200);
-            echo json_encode([
-                "status" => "success", 
-                "data" => [
-                    "nama_lengkap" => $admin['name'],
-                    "email" => "admin@perusahaan.com", // Dummy karena tabel admin tidak punya email
-                    "username" => $admin['name'],
-                    "role" => "hr",
-                    "sisa_cuti" => 12, // HR biasanya punya kuota penuh
-                    "avatar" => $avatar
-                ]
-            ]);
-            exit;
-        }
-
-        // Jika tidak ada di keduanya
-        http_response_code(404);
-        echo json_encode(["status" => "error", "message" => "Profil tidak ditemukan"]);
-
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(["status" => "error", "message" => "Gagal: " . $e->getMessage()]);
+// Karyawan biasa hanya boleh melihat profil sendiri
+if (!$user['isHr']) {
+    // Ambil profil dari employee_id di session, abaikan parameter dari client
+    $my_employee_id = $user['employee_id'];
+    if (!$my_employee_id) {
+        Json::error('Akun ini tidak terhubung ke data karyawan', 400);
     }
-} else {
-    http_response_code(400);
-    echo json_encode(["status" => "error", "message" => "employee_id tidak ditemukan"]);
+
+    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    $stmt = $pdo->prepare("SELECT u.username, u.role, e.first_name, e.last_name, e.email, u.avatar 
+                           FROM users u 
+                           JOIN employees e ON e.id = u.employee_id 
+                           WHERE u.employee_id = ? LIMIT 1");
+    $stmt->execute([$my_employee_id]);
+    $profil = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$profil) {
+        Json::error('Profil tidak ditemukan', 404);
+    }
+
+    $profil['nama_lengkap'] = trim($profil['first_name'] . ' ' . $profil['last_name']);
+
+    // Cek sisa cuti
+    $stmtCuti = $pdo->prepare("SELECT remaining_leave FROM employee_leaves WHERE employee_id = ? LIMIT 1");
+    $stmtCuti->execute([$my_employee_id]);
+    $cuti = $stmtCuti->fetch(PDO::FETCH_ASSOC);
+    $profil['sisa_cuti'] = $cuti ? (int)$cuti['remaining_leave'] : 0;
+
+    http_response_code(200);
+    echo json_encode([
+        "success" => true,
+        "message" => "Profil berhasil diambil",
+        "data" => $profil
+    ]);
+    exit;
 }
+
+// HR dapat melihat profil karyawan lain, TAPI hanya jika employee_id valid di request
+// dan sesuai aturan role
+if ($user['isHr'] && $employee_id_from_client) {
+    // Validasi: employee_id dari client harus berupa angka
+    $target_employee_id = (int)$employee_id_from_client;
+
+    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    $stmt = $pdo->prepare("SELECT u.username, u.role, e.first_name, e.last_name, e.email, u.avatar 
+                           FROM users u 
+                           JOIN employees e ON e.id = u.employee_id 
+                           WHERE u.employee_id = ? LIMIT 1");
+    $stmt->execute([$target_employee_id]);
+    $profil = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$profil) {
+        http_response_code(404);
+        echo json_encode([
+            "success" => false,
+            "message" => "Profil karyawan tujuan tidak ditemukan"
+        ]);
+        exit;
+    }
+
+    $profil['nama_lengkap'] = trim($profil['first_name'] . ' ' . $profil['last_name']);
+
+    // Cek sisa cuti
+    $stmtCuti = $pdo->prepare("SELECT remaining_leave FROM employee_leaves WHERE employee_id = ? LIMIT 1");
+    $stmtCuti->execute([$target_employee_id]);
+    $cuti = $stmtCuti->fetch(PDO::FETCH_ASSOC);
+    $profil['sisa_cuti'] = $cuti ? (int)$cuti['remaining_leave'] : 0;
+
+    http_response_code(200);
+    echo json_encode([
+        "success" => true,
+        "message" => "Profil karyawan berhasil diambil",
+        "data" => $profil
+    ]);
+    exit;
+}
+
+// Jika HR tapi tidak ada employee_id di request
+if ($user['isHr'] && !$employee_id_from_client) {
+    Json::error('employee_id harus disediakan untuk melihat profil karyawan lain', 400);
+}
+
+// Jika tidak ada kondisi di atas terpenuhi
+Json::error('Anda tidak berwenang mengakses profil ini', 403);
 ?>

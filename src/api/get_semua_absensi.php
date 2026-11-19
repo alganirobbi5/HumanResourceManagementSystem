@@ -1,23 +1,31 @@
 <?php
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
-try {
-    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
 
-    // Mengambil semua data absensi, digabung dengan nama karyawan
-    $query = "SELECT a.id, a.date, a.clock_in, a.clock_out, a.status, 
-                     e.first_name, e.last_name 
-              FROM attendances a 
-              LEFT JOIN employees e ON a.employee_id = e.id 
-              ORDER BY a.date DESC, a.clock_in DESC";
-              
-    $stmt = $pdo->query($query);
-    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$user = Auth::requireApiHr();  // Hanya role HR yang boleh
 
-    echo json_encode(["status" => "success", "data" => $data]);
-} catch (PDOException $e) {
-    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
-}
+$pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+// Mengambil semua data absensi, digabung dengan nama karyawan
+$query = "SELECT a.id, a.date, a.clock_in, a.clock_out, a.status, 
+                 e.first_name, e.last_name 
+          FROM attendances a 
+          LEFT JOIN employees e ON a.employee_id = e.id 
+          ORDER BY a.date DESC, a.clock_in DESC";
+
+$stmt = $pdo->query($query);
+$data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+http_response_code(200);
+echo json_encode([
+    "success" => true,
+    "message" => "Daftar absensi seluruh karyawan",
+    "data" => $data
+]);
+exit;
 ?>
