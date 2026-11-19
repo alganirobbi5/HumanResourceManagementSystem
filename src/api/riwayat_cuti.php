@@ -17,9 +17,30 @@ if (!$employee_id) {
 $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-// HANYA RIWAYAT CUTI MILIK USER YANG TERLOGIN
+// Kolom opsional (judul/alasan tersimpan di `type`). Tetap kompatibel
+// jika skema database belum memiliki kolom reason/comment.
+$hasReason = false;
+try {
+    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'reason'");
+    $hasReason = $col && $col->fetch() !== false;
+} catch (PDOException $e) {
+    $hasReason = false;
+}
+$hasComment = false;
+try {
+    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'comment'");
+    $hasComment = $col && $col->fetch() !== false;
+} catch (PDOException $e) {
+    $hasComment = false;
+}
+
+$fields = "id, type, leave_from, leave_to, status";
+if ($hasReason) $fields .= ", reason";
+if ($hasComment) $fields .= ", comment";
+
+// HANYA RIWAYAT CUTI MILIK USER YANG TERLOGIN (employee_id dari token/session)
 // Lewatkan parameter employee_id dari GET untuk keamanan
-$stmt = $pdo->prepare("SELECT id, type, leave_from, leave_to, status FROM leaves WHERE employee_id = ? ORDER BY id DESC");
+$stmt = $pdo->prepare("SELECT $fields FROM leaves WHERE employee_id = ? ORDER BY id DESC");
 $stmt->execute([$employee_id]);
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

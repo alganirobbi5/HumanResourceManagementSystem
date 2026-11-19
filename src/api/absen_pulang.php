@@ -16,13 +16,19 @@ if (!$employee_id) {
 
 $data = Json::readBody();
 
-if (empty($data->waktu_lokal)) {
+// Field opsional dari Flutter (selfie pulang, GPS). Diabaikan aman jika
+// skema database belum memiliki kolom pendukung. Identitas tetap dari token.
+$selfie = isset($data['selfie']) ? (string)$data['selfie'] : '';
+$latitude = isset($data['latitude']) ? (string)$data['latitude'] : '';
+$longitude = isset($data['longitude']) ? (string)$data['longitude'] : '';
+
+if (empty($data['waktu_lokal'])) {
     Json::error('waktu_lokal wajib diisi', 400);
 }
 
 // Ambil tanggal dan waktu dari HP
-$tanggal = date('Y-m-d', strtotime($data->waktu_lokal));
-$waktu_sekarang = date('H:i:s', strtotime($data->waktu_lokal));
+$tanggal = date('Y-m-d', strtotime($data['waktu_lokal']));
+$waktu_sekarang = date('H:i:s', strtotime($data['waktu_lokal']));
 
 // Cari data absen hari ini (berdasarkan employee_id dari session dan date)
 $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");

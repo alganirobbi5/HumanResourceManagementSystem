@@ -6,8 +6,20 @@ try {
     $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Ambil data dari tabel notices menggunakan nama kolom yang benar
-    $stmt = $pdo->query("SELECT id, subject AS title, description AS message, notice_date AS created_at FROM notices ORDER BY id DESC");
+    // Kolom attachment opsional: tetap kompatibel jika migrasi belum dijalankan.
+    $hasAttachment = false;
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM notices LIKE 'attachment'");
+        $hasAttachment = $col && $col->fetch() !== false;
+    } catch (PDOException $e) {
+        $hasAttachment = false;
+    }
+
+    $select = $hasAttachment
+        ? "SELECT id, subject AS title, description AS message, notice_date AS created_at, attachment FROM notices ORDER BY id DESC"
+        : "SELECT id, subject AS title, description AS message, notice_date AS created_at FROM notices ORDER BY id DESC";
+
+    $stmt = $pdo->query($select);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode(["status" => "success", "data" => $data]);

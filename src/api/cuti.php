@@ -16,18 +16,42 @@ if (!empty($data->employee_id) && !empty($data->start_date) && !empty($data->end
         $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // Gunakan tanda tanya (?) untuk created_at, lalu kirim time() di array
-        $query = "INSERT INTO leaves (employee_id, type, leave_from, leave_to, total_leave, status, created_at) 
-          VALUES (?, ?, ?, ?, 1, 1, ?)";
-                  
-        $stmt = $pdo->prepare($query);
-        $stmt->execute([
-            $data->employee_id, 
-            $data->reason, 
-            $data->start_date, 
-            $data->end_date,
-            time() // <-- FUNGSI time() DIPANGGIL DI SINI
-        ]);
+        $judul = !empty($data->title) ? (string)$data->title : (string)$data->reason;
+        $alasan = (string)$data->reason;
+
+        // Kolom reason opsional; tetap kompatibel jika migrasi belum dijalankan.
+        $hasReason = false;
+        try {
+            $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'reason'");
+            $hasReason = $col && $col->fetch() !== false;
+        } catch (PDOException $e) {
+            $hasReason = false;
+        }
+
+        if ($hasReason) {
+            $query = "INSERT INTO leaves (employee_id, type, reason, leave_from, leave_to, total_leave, status, created_at)
+              VALUES (?, ?, ?, ?, ?, 1, 1, ?)";
+            $stmt = $pdo->prepare($query);
+            $stmt->execute([
+                $data->employee_id,
+                $judul,
+                $alasan,
+                $data->start_date,
+                $data->end_date,
+                time(),
+            ]);
+        } else {
+            $query = "INSERT INTO leaves (employee_id, type, leave_from, leave_to, total_leave, status, created_at)
+              VALUES (?, ?, ?, ?, 1, 1, ?)";
+            $stmt = $pdo->prepare($query);
+            $stmt->execute([
+                $data->employee_id,
+                $judul,
+                $data->start_date,
+                $data->end_date,
+                time(),
+            ]);
+        }
         
         http_response_code(201);
         echo json_encode(["status" => "success", "message" => "Pengajuan cuti berhasil dikirim"]);

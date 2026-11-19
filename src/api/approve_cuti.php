@@ -21,43 +21,63 @@ if (!in_array($data['status'], [1, 2, 3])) {
     Json::error('Status tidak valid (harus 1=Pending, 2=Disetujui, 3=Ditolak)', 422);
 }
 
-// Cek keberadaan pengajuan cuti
-$pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+try {
+    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-$stmt = $pdo->prepare("SELECT id, employee_id, status FROM leaves WHERE id = LIMIT 1");
-$stmt->execute([(int)$data['leave_id']]);
-$leave = $stmt->fetch(PDO::FETCH_ASSOC);
+    // Cek keberadaan pengajuan cuti
+    $stmt = $pdo->prepare("SELECT id, employee_id, status FROM leaves WHERE id = ? LIMIT 1");
+    $stmt->execute([(int)$data['leave_id']]);
+    $leave = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$leave) {
-    Json::error('Pengajuan cuti tidak ditemukan', 404);
-}
+    if (!$leave) {
+        Json::error('Pengajuan cuti tidak ditemukan', 404);
+    }
 
-// Opsional: bisa tambahan validasi:
-// - Apakah cuti ini milik karyawan yang sedang login? (bukan untuk approve/reject)
-// - Status saat ini harus masih Pending (1) sebelum bisa di-approve/reject
+    // Komentar opsional dari HR (kolom comment opsional; tetap kompatibel
+    // jika skema database belum memiliki kolom tersebut).
+    $comment = isset($data['comment']) ? trim((string)$data['comment']) : '';
+    $hasComment = false;
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'comment'");
+        $hasComment = $col && $col->fetch() !== false;
+    } catch (PDOException $e) {
+        $hasComment = false;
+    }
 
-// Update status cuti
-$query = "UPDATE leaves SET status = ? WHERE id = ?";
-$stmtUpdate = $pdo->prepare($query);
-$result = $stmtUpdate->execute([$data['status'], (int)$data['leave_id']]);
+    // Update status cuti
+    if ($hasComment) {
+        $stmtUpdate = $pdo->prepare("UPDATE leaves SET status = ?, comment = ? WHERE id = ?");
+        $result = $stmtUpdate->execute([$data['status'], $comment, (int)$data['leave_id']]);
+    } else {
+        $stmtUpdate = $pdo->prepare("UPDATE leaves SET status = ? WHERE id = ?");
+        $result = $stmtUpdate->execute([$data['status'], (int)$data['leave_id']]);
+    }
 
-if ($result) {
-    http_response_code(200);
-    echo json_encode([
-        "success" => true,
-        "message" => "Status cuti berhasil diperbarui",
-        "data" => [
-            "leave_id" => (int)$data['leave_id'],
-            "status_baru" => $data['status']
-        ]
-    ]);
-    exit;
-} else {
+    if ($result) {
+        http_response_code(200);
+        echo json_encode([
+            "success" => true,
+            "message" => "Status cuti berhasil diperbarui",
+            "data" => [
+                "leave_id" => (int)$data['leave_id'],
+                "status_baru" => $data['status']
+            ]
+        ]);
+        exit;
+    }
+
     http_response_code(500);
     echo json_encode([
         "success" => false,
         "message" => "Gagal memperbarui status cuti"
+    ]);
+    exit;
+} catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode([
+        "success" => false,
+        "message" => "Terjadi kesalahan server"
     ]);
     exit;
 }
