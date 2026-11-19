@@ -9,6 +9,21 @@ try {
     $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+    // Kolom opsional; tetap kompatibel jika migrasi belum dijalankan.
+    $hasReason = false;
+    $hasComment = false;
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'reason'");
+        $hasReason = $col && $col->fetch() !== false;
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'comment'");
+        $hasComment = $col && $col->fetch() !== false;
+    } catch (PDOException $e) {
+    }
+
+    $extra = '';
+    if ($hasReason) $extra .= ", l.reason AS alasan";
+    if ($hasComment) $extra .= ", l.comment";
+
     // Menampilkan seluruh pengajuan cuti dari semua karyawan (tanpa filter employee_id).
     $query = "SELECT
                 l.id,
@@ -18,6 +33,7 @@ try {
                 l.leave_from,
                 l.leave_to,
                 l.status
+                $extra
               FROM leaves l
               LEFT JOIN employees e ON e.id = l.employee_id
               ORDER BY l.id DESC";

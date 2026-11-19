@@ -21,9 +21,19 @@ if ($employee_id) {
             $hasReason = false;
         }
 
-        $select = $hasReason
-            ? "SELECT id, type, reason, leave_from, leave_to, status FROM leaves WHERE employee_id = ? ORDER BY id DESC"
-            : "SELECT id, type, leave_from, leave_to, status FROM leaves WHERE employee_id = ? ORDER BY id DESC";
+        $hasComment = false;
+        try {
+            $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'comment'");
+            $hasComment = $col && $col->fetch() !== false;
+        } catch (PDOException $e) {
+            $hasComment = false;
+        }
+
+        $fields = "id, type, leave_from, leave_to, status";
+        if ($hasReason) $fields .= ", reason";
+        if ($hasComment) $fields .= ", comment";
+
+        $select = "SELECT $fields FROM leaves WHERE employee_id = ? ORDER BY id DESC";
 
         $stmt = $pdo->prepare($select);
         $stmt->execute([$employee_id]);
