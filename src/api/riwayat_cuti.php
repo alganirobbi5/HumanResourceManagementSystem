@@ -12,8 +12,20 @@ if ($employee_id) {
         $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // MENGGUNAKAN NAMA KOLOM YANG SUDAH DIPERBAIKI (leave_from, leave_to, status)
-        $stmt = $pdo->prepare("SELECT id, type, leave_from, leave_to, status FROM leaves WHERE employee_id = ? ORDER BY id DESC");
+        // Kolom reason opsional (judul tersimpan di `type`).
+        $hasReason = false;
+        try {
+            $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'reason'");
+            $hasReason = $col && $col->fetch() !== false;
+        } catch (PDOException $e) {
+            $hasReason = false;
+        }
+
+        $select = $hasReason
+            ? "SELECT id, type, reason, leave_from, leave_to, status FROM leaves WHERE employee_id = ? ORDER BY id DESC"
+            : "SELECT id, type, leave_from, leave_to, status FROM leaves WHERE employee_id = ? ORDER BY id DESC";
+
+        $stmt = $pdo->prepare($select);
         $stmt->execute([$employee_id]);
         $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
