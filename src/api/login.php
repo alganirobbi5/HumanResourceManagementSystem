@@ -29,6 +29,7 @@ if (!empty($data->username) && !empty($data->password)) {
                 "status" => "success",
                 "data" => [
                     "user_id" => $user['id'],
+                    "employee_id" => $user['employee_id'],
                     "username" => $user['username'],
                     "role" => $user['role'],
                     "nama_lengkap" => trim($user['first_name'] . ' ' . $user['last_name'])
