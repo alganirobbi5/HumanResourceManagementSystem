@@ -7,6 +7,12 @@ require_once __DIR__ . '/../common/DBConnection.php';
 
 $data = json_decode(file_get_contents("php://input"));
 
+// Field opsional dari Flutter (selfie pulang). Diabaikan aman jika
+// skema database belum memiliki kolom pendukung.
+$selfie = isset($data->selfie) ? (string)$data->selfie : '';
+$latitude = isset($data->latitude) ? (string)$data->latitude : '';
+$longitude = isset($data->longitude) ? (string)$data->longitude : '';
+
 if (!empty($data->employee_id) && !empty($data->waktu_lokal)) {
     try {
         $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
