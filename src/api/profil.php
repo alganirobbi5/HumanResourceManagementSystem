@@ -13,7 +13,7 @@ if ($employee_id) {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         // 1. Coba cari di tabel employees (untuk Karyawan)
-        $query = "SELECT e.first_name, e.last_name, e.email, u.username, u.role 
+        $query = "SELECT e.first_name, e.last_name, e.email, u.username, u.role, u.avatar 
                   FROM employees e 
                   JOIN users u ON e.id = u.employee_id 
                   WHERE e.id = ? LIMIT 1";
@@ -42,6 +42,18 @@ if ($employee_id) {
         $admin = $stmtAdmin->fetch(PDO::FETCH_ASSOC);
 
         if ($admin) {
+            $avatar = null;
+            try {
+                $stmtAvatar = $pdo->prepare("SELECT avatar FROM users WHERE username = ? LIMIT 1");
+                $stmtAvatar->execute([$admin['name']]);
+                $rowAvatar = $stmtAvatar->fetch(PDO::FETCH_ASSOC);
+                if ($rowAvatar) {
+                    $avatar = $rowAvatar['avatar'];
+                }
+            } catch (PDOException $e) {
+                $avatar = null;
+            }
+
             http_response_code(200);
             echo json_encode([
                 "status" => "success", 
@@ -50,7 +62,8 @@ if ($employee_id) {
                     "email" => "admin@perusahaan.com", // Dummy karena tabel admin tidak punya email
                     "username" => $admin['name'],
                     "role" => "hr",
-                    "sisa_cuti" => 12 // HR biasanya punya kuota penuh
+                    "sisa_cuti" => 12, // HR biasanya punya kuota penuh
+                    "avatar" => $avatar
                 ]
             ]);
             exit;
