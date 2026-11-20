@@ -1,0 +1,22 @@
+-- SUPERSEDED / JANGAN DIJALANKAN.
+--
+-- Migrasi ini digantikan oleh:
+--   DB/migrations/apply_admin_employee_identity.php
+--
+-- Alasan: SQL di bawah hanya membuat baris users untuk admin tanpa
+-- employee_id yang valid. Karena admins.name tidak cocok dengan
+-- employees.user_name pada data VPS saat ini, membuat users mapping akan
+-- mengunci admin pada employee_id NULL dan menghalangi pembuatan identitas
+-- karyawan yang benar kemudian.
+--
+-- Gunakan script PHP tersebut bersama file data aktual:
+--   DB/admin_employee_identity.local.php
+-- (lihat contoh: DB/admin_employee_identity.local.example.php)
+--
+-- Baris di bawah sengaja dinonaktifkan (komentar).
+-- INSERT INTO users (username, email, password_hash, role, employee_id, is_active)
+-- SELECT a.name, NULL, UUID(), 'hr', e.id, 1
+-- FROM admins a
+-- LEFT JOIN employees e ON e.user_name = a.name
+-- LEFT JOIN users u ON u.username = a.name
+-- WHERE u.id IS NULL;
