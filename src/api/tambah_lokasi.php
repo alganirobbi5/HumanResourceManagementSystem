@@ -1,4 +1,6 @@
 <?php
+
+require_once __DIR__ . '/../common/DBConnection.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST");
@@ -7,7 +9,7 @@ $data = json_decode(file_get_contents("php://input"));
 
 if (!empty($data->nama_lokasi) && !empty($data->latitude) && !empty($data->longitude) && !empty($data->radius_meter)) {
     try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+        $pdo = DBConnection::pdo();
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         $query = "INSERT INTO office_locations (nama_lokasi, latitude, longitude, radius_meter) VALUES (?, ?, ?, ?)";

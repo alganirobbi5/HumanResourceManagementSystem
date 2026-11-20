@@ -1,5 +1,6 @@
 <?php
 
+require_once __DIR__ . '/../common/DBConnection.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -8,7 +9,7 @@ require_once __DIR__ . '/../common/Json.php';
 
 $user = Auth::requireApiHr();  // Hanya role HR yang boleh
 
-$pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+$pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 // Mengambil semua data absensi, digabung dengan nama karyawan

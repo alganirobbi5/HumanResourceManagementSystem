@@ -2,6 +2,7 @@
 
 class DBConnection
 {
+    private static $configCache = null;
 
     private $conn;
     private $host;
@@ -10,27 +11,78 @@ class DBConnection
     private $dbName;
     private $port;
 
-    function __construct($params=array()) {
+    /**
+     * Konfigurasi database terpusat.
+     * Prioritas: environment variables -> file lokal (tidak di-commit).
+     * Tidak ada kredensial yang disimpan di source yang Ter-track.
+     */
+    public static function config()
+    {
+        if (self::$configCache !== null) {
+            return self::$configCache;
+        }
+
+        $envHost = getenv('HRIS_DB_HOST');
+        if ($envHost !== false && $envHost !== '') {
+            self::$configCache = array(
+                'host' => $envHost,
+                'port' => getenv('HRIS_DB_PORT') ?: '3306',
+                'db' => getenv('HRIS_DB_NAME') ?: 'hris',
+                'user' => (string)getenv('HRIS_DB_USER'),
+                'pass' => (string)getenv('HRIS_DB_PASSWORD'),
+            );
+            return self::$configCache;
+        }
+
+        $localFile = __DIR__ . '/db.local.php';
+        if (file_exists($localFile)) {
+            $local = require $localFile;
+            if (is_array($local) && isset($local['host'], $local['db'], $local['user'], $local['pass'])) {
+                self::$configCache = array(
+                    'host' => $local['host'],
+                    'port' => isset($local['port']) ? $local['port'] : '3306',
+                    'db' => $local['db'],
+                    'user' => $local['user'],
+                    'pass' => $local['pass'],
+                );
+                return self::$configCache;
+            }
+        }
+
+        throw new RuntimeException('Database configuration is not available. Set HRIS_DB_* environment variables or create src/common/db.local.php.');
+    }
+
+    /** Koneksi PDO bersama untuk endpoint API. */
+    public static function pdo()
+    {
+        $c = self::config();
+        $dsn = 'mysql:host=' . $c['host'] . ';port=' . $c['port'] . ';dbname=' . $c['db'] . ';charset=utf8mb4';
+        return new PDO($dsn, $c['user'], $c['pass'], array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION));
+    }
+
+    function __construct($params = array())
+    {
+        $c = self::config();
         $this->conn = false;
-        $this->host = '31.97.199.58'; // <-- IP Server
-        $this->user = 'HRIS';         // <-- Username DB
-        $this->password = 'Admin@2026'; // <-- Password DB
-        $this->dbName = 'hris';       // <-- Nama Database
-        $this->port = '3306';
+        $this->host = $c['host'];
+        $this->user = $c['user'];
+        $this->password = $c['pass'];
+        $this->dbName = $c['db'];
+        $this->port = $c['port'];
         $this->connect();
     }
 
-    function __destruct() {
+    function __destruct()
+    {
         $this->disconnect();
     }
 
-    private function connect() {
-
+    private function connect()
+    {
         if (!$this->conn) {
-
             try {
-
-                $this->conn = new PDO('mysql:host='.$this->host.';dbname='.$this->dbName.'', $this->user, $this->password, array(PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8'));
+                $dsn = 'mysql:host=' . $this->host . ';port=' . $this->port . ';dbname=' . $this->dbName;
+                $this->conn = new PDO($dsn, $this->user, $this->password, array(PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8'));
 
                 if (!$this->conn) {
                     $this->status_fatal = true;
@@ -45,21 +97,22 @@ class DBConnection
         return $this->conn;
     }
 
-    function disconnect() {
+    function disconnect()
+    {
         if ($this->conn) {
             $this->conn = null;
         }
     }
 
-    function getOne($query) {
-
+    function getOne($query)
+    {
         $result = $this->conn->prepare($query);
         $ret = $result->execute();
 
         if (!$ret) {
             echo 'PDO::errorInfo():';
             echo '<br />';
-            echo 'error SQL: '.$query;
+            echo 'error SQL: ' . $query;
             die();
         }
 
@@ -69,15 +122,15 @@ class DBConnection
         return $reponse;
     }
 
-    function getAll($query) {
-
+    function getAll($query)
+    {
         $result = $this->conn->prepare($query);
         $ret = $result->execute();
 
         if (!$ret) {
             echo 'PDO::errorInfo():';
             echo '<br />';
-            echo 'error SQL: '.$query;
+            echo 'error SQL: ' . $query;
             die();
         }
 
@@ -87,66 +140,70 @@ class DBConnection
         return $reponse;
     }
 
-    function execute($query) {
-
+    function execute($query)
+    {
         if (!$response = $this->conn->exec($query)) {
             echo 'PDO::errorInfo():';
             echo '<br />';
-            echo 'error SQL: '.$query;
+            echo 'error SQL: ' . $query;
             die();
         }
 
         return $response;
     }
 
-    function getPdo() {
+    function getPdo()
+    {
         return $this->conn;
     }
 
     // Jalankan statement dengan parameter terikat (prepared statement).
-    function run($query, array $params = array()) {
+    function run($query, array $params = array())
+    {
         $stmt = $this->conn->prepare($query);
         $stmt->execute($params);
         return $stmt;
     }
 
-    function selectAll($query, array $params = array()) {
+    function selectAll($query, array $params = array())
+    {
         $stmt = $this->run($query, $params);
         $stmt->setFetchMode(PDO::FETCH_ASSOC);
         return $stmt->fetchAll();
     }
 
-    function selectOne($query, array $params = array()) {
+    function selectOne($query, array $params = array())
+    {
         $stmt = $this->run($query, $params);
         $stmt->setFetchMode(PDO::FETCH_ASSOC);
         $row = $stmt->fetch();
         return $row === false ? null : $row;
     }
 
-    function insert($query, array $params = array()) {
+    function insert($query, array $params = array())
+    {
         $this->run($query, $params);
         return (int)$this->conn->lastInsertId();
     }
 
-    function beginTransaction() {
+    function beginTransaction()
+    {
         if (!$this->conn->inTransaction()) {
             $this->conn->beginTransaction();
         }
     }
 
-    function commit() {
+    function commit()
+    {
         if ($this->conn->inTransaction()) {
             $this->conn->commit();
         }
     }
 
-    function rollBack() {
+    function rollBack()
+    {
         if ($this->conn->inTransaction()) {
             $this->conn->rollBack();
         }
     }
 }
-
-//$dbConn=new DBConnection();
-//
-//print_r($dbConn->getAll("SELECT * FROM `admins`"));

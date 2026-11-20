@@ -1,5 +1,6 @@
 <?php
 
+require_once __DIR__ . '/../common/DBConnection.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST");
@@ -31,7 +32,7 @@ $tanggal = date('Y-m-d', strtotime($data['waktu_lokal']));
 $waktu_sekarang = date('H:i:s', strtotime($data['waktu_lokal']));
 
 // Cari data absen hari ini (berdasarkan employee_id dari session dan date)
-$pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+$pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 $stmt = $pdo->prepare("SELECT id, clock_in, clock_out FROM attendances WHERE employee_id = ? AND date = ? ORDER BY id DESC LIMIT 1");

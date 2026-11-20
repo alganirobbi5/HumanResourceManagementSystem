@@ -1,9 +1,11 @@
 <?php
+
+require_once __DIR__ . '/../common/DBConnection.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
 try {
-    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+    $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
     $stmt = $pdo->query("SELECT jam_masuk, jam_keluar FROM pengaturan_jam LIMIT 1");

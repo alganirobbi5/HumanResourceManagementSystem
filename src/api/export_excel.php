@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../common/DBConnection.php';
 
 try {
-    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+    $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Ambil data absensi

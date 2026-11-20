@@ -1,5 +1,6 @@
 <?php
 
+require_once __DIR__ . '/../common/DBConnection.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST");
@@ -41,7 +42,7 @@ if (isset($data->tanggal_lokal) && isset($data->waktu_lokal)) {
 // --- LOGIKA GEOFENCING ---
 
 // 1. Ambil semua lokasi dari database
-$pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+$pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 $stmtLokasi = $pdo->query("SELECT * FROM office_locations");

@@ -11,10 +11,10 @@ if (!empty($data->username) && !empty($data->password)) {
     $username = $data->username;
     $password = $data->password;
 
-    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
     try {
+        $pdo = DBConnection::pdo();
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
         // 1. CEK KE TABEL USERS (KARYAWAN / HR BARU)
         $stmt = $pdo->prepare("SELECT u.*, e.first_name, e.last_name 
                                FROM users u 

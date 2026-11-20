@@ -1,2 +1,5 @@
 storage/selfies/
 *.log
+
+src/common/db.local.php
+*.local.php
