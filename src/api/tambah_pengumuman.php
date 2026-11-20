@@ -1,47 +1,132 @@
 <?php
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
+
+// Hanya HR yang boleh membuat pengumuman. Identitas berasal dari token/session,
+// bukan dari payload request.
+$user = Auth::requireApiHr();
 
 $data = json_decode(file_get_contents("php://input"));
 
-if (!empty($data->title) && !empty($data->message)) {
-    try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$title = isset($data->title) ? trim((string)$data->title) : '';
+$message = isset($data->message) ? trim((string)$data->message) : '';
 
-        $tanggal = date('Y-m-d');
-        $waktu = date('H:i:s');
-        $attachment = isset($data->attachment) ? (string)$data->attachment : '';
+if ($title === '' || $message === '') {
+    Json::error('Judul dan pesan tidak boleh kosong', 400);
+}
 
-        $hasAttachment = false;
-        try {
-            $col = $pdo->query("SHOW COLUMNS FROM notices LIKE 'attachment'");
-            $hasAttachment = $col && $col->fetch() !== false;
-        } catch (PDOException $e) {
-            $hasAttachment = false;
-        }
-
-        if ($hasAttachment) {
-            $query = "INSERT INTO notices (subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date, attachment)
-                      VALUES (?, ?, ?, ?, 1, 'HR', NOW(), 'HR', NOW(), ?)";
-            $stmt = $pdo->prepare($query);
-            $stmt->execute([$data->title, $data->message, $tanggal, $waktu, $attachment]);
-        } else {
-            $query = "INSERT INTO notices (subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date)
-                      VALUES (?, ?, ?, ?, 1, 'HR', NOW(), 'HR', NOW())";
-            $stmt = $pdo->prepare($query);
-            $stmt->execute([$data->title, $data->message, $tanggal, $waktu]);
-        }
-
-        http_response_code(201);
-        echo json_encode(["status" => "success", "message" => "Pengumuman berhasil dibuat"]);
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(["status" => "error", "message" => "MYSQL ERROR: " . $e->getMessage()]);
+// Validasi lampiran: format data URL, MIME sebenarnya, ekstensi nama file, dan ukuran.
+$attachment = '';
+if (isset($data->attachment) && (string)$data->attachment !== '') {
+    $check = validateAttachment($data->attachment);
+    if (!$check['ok']) {
+        Json::error($check['message'], 422);
     }
-} else {
-    http_response_code(400);
-    echo json_encode(["status" => "error", "message" => "Judul dan pesan tidak boleh kosong"]);
+    $attachment = $check['value'];
+}
+
+try {
+    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    $tanggal = date('Y-m-d');
+    $waktu = date('H:i:s');
+    $insertBy = mb_substr((string)$user['username'], 0, 30);
+
+    $hasAttachment = false;
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM notices LIKE 'attachment'");
+        $hasAttachment = $col && $col->fetch() !== false;
+    } catch (PDOException $e) {
+        $hasAttachment = false;
+    }
+
+    if ($hasAttachment) {
+        $query = "INSERT INTO notices (subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date, attachment)
+                  VALUES (?, ?, ?, ?, 1, ?, NOW(), ?, NOW(), ?)";
+        $stmt = $pdo->prepare($query);
+        $stmt->execute([$title, $message, $tanggal, $waktu, $insertBy, $insertBy, $attachment]);
+    } else {
+        $query = "INSERT INTO notices (subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date)
+                  VALUES (?, ?, ?, ?, 1, ?, NOW(), ?, NOW())";
+        $stmt = $pdo->prepare($query);
+        $stmt->execute([$title, $message, $tanggal, $waktu, $insertBy, $insertBy]);
+    }
+
+    http_response_code(201);
+    echo json_encode([
+        "success" => true,
+        "message" => "Pengumuman berhasil dibuat"
+    ]);
+    exit;
+} catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode([
+        "success" => false,
+        "message" => "Gagal membuat pengumuman"
+    ]);
+    exit;
+}
+
+/**
+ * Lampiran dikirim Flutter sebagai JSON string berisi dataUrl, namaFile, mime.
+ * Format penyimpanan tidak diubah; hanya divalidasi sebelum disimpan.
+ */
+function validateAttachment($value)
+{
+    $raw = (string)$value;
+    if (strlen($raw) > 8000000) {
+        return array('ok' => false, 'message' => 'Lampiran terlalu besar');
+    }
+
+    $decoded = json_decode($raw, true);
+    $dataUrl = $raw;
+    $namaFile = '';
+    if (is_array($decoded)) {
+        $dataUrl = isset($decoded['dataUrl']) ? (string)$decoded['dataUrl'] : '';
+        $namaFile = isset($decoded['namaFile']) ? (string)$decoded['namaFile'] : '';
+    }
+
+    if (!preg_match('#^data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=\r\n]+)$#', $dataUrl, $m)) {
+        return array('ok' => false, 'message' => 'Format lampiran tidak didukung');
+    }
+
+    $mime = strtolower($m[1]);
+    $allowed = array(
+        'image/jpeg' => array('jpg', 'jpeg'),
+        'image/png' => array('png'),
+        'image/webp' => array('webp'),
+        'image/gif' => array('gif'),
+        'application/pdf' => array('pdf'),
+        'text/plain' => array('txt'),
+    );
+    if (!isset($allowed[$mime])) {
+        return array('ok' => false, 'message' => 'Jenis lampiran tidak diizinkan');
+    }
+
+    if ($namaFile !== '') {
+        $ext = strtolower(pathinfo($namaFile, PATHINFO_EXTENSION));
+        if ($ext !== '' && !in_array($ext, $allowed[$mime], true)) {
+            return array('ok' => false, 'message' => 'Ekstensi file tidak sesuai dengan jenis lampiran');
+        }
+    }
+
+    $bytes = base64_decode($m[2], true);
+    if ($bytes === false || strlen($bytes) > 5 * 1024 * 1024) {
+        return array('ok' => false, 'message' => 'Isi lampiran tidak valid atau terlalu besar');
+    }
+
+    return array('ok' => true, 'value' => $raw);
 }
 ?>

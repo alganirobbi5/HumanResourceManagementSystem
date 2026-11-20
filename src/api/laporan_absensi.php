@@ -1,15 +1,21 @@
 <?php
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
 
-require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
+
+// Endpoint laporan absensi seluruh karyawan hanya untuk HR.
+// Identitas dan role berasal dari token/session, bukan dari request.
+$user = Auth::requireApiHr();
 
 // Filter tanggal opsional: /laporan_absensi.php?date=2026-11-19
 // Dipakai Flutter untuk menampilkan absensi hari ini sesuai database.
@@ -40,11 +46,12 @@ try {
     $stmt->execute($params);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Envelope lama dipertahankan selama masa transisi Flutter.
     http_response_code(200);
     echo json_encode(["status" => "success", "data" => $data]);
-    
+    exit;
 } catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode(["status" => "error", "message" => "Gagal: " . $e->getMessage()]);
+    // Jangan pernah mengembalikan detail exception database ke client.
+    Json::error('Gagal memuat data absensi', 500);
 }
 ?>
