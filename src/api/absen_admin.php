@@ -1,0 +1,48 @@
+<?php
+
+header("Access-Control-Allow-Origin: *");
+header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
+require_once __DIR__ . '/../common/Config.php';
+require_once __DIR__ . '/../service/AdminAttendanceService.php';
+require_once __DIR__ . '/../service/RateLimiter.php';
+
+$user = Auth::requireApiAdmin();
+$adminId = Auth::adminId();
+
+if (!RateLimiter::allow('attendance_admin', Config::RATE_LIMIT_ATTENDANCE_SECONDS)) {
+    Json::error('Terlalu sering mengirim absensi, tunggu beberapa saat', 429);
+}
+
+$latitude = isset($_POST['latitude']) ? $_POST['latitude'] : null;
+$longitude = isset($_POST['longitude']) ? $_POST['longitude'] : null;
+$gpsAccuracy = isset($_POST['gps_accuracy']) ? $_POST['gps_accuracy'] : null;
+$requestId = isset($_POST['request_id']) ? preg_replace('/[^a-zA-Z0-9\-_]/', '', (string)$_POST['request_id']) : null;
+$file = isset($_FILES['selfie']) ? $_FILES['selfie'] : array('error' => UPLOAD_ERR_NO_FILE);
+
+try {
+    $service = new AdminAttendanceService();
+    $status = $service->checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $file, $requestId);
+    http_response_code(201);
+    echo json_encode([
+        'success' => true,
+        'message' => 'Absen masuk Admin HR berhasil disimpan',
+        'data' => $status,
+    ]);
+    exit;
+} catch (InvalidArgumentException $e) {
+    Json::error($e->getMessage(), 422);
+} catch (RuntimeException $e) {
+    Json::error($e->getMessage(), 409);
+} catch (Exception $e) {
+    Json::error('Gagal menyimpan absensi Admin HR', 500);
+}

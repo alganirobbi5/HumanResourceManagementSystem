@@ -106,6 +106,92 @@ Batas rentang: `Config::MAX_EXPORT_RANGE_DAYS`.
 | `views/leave/riwayatCuti.php` | karyawan (miliknya) / hr (seluruh) |
 | `views/reports/laporanAbsensi.php` | hr |
 
+## Absensi Admin HR (self-service)
+
+Endpoint ini khusus akun **Admin HR legacy** (tabel `admins`). Identitas diambil dari token,
+bukan dari payload. Admin HR **tidak memiliki employee_id** dan absensinya disimpan di tabel
+terpisah (`admin_attendances`), bukan `attendances`.
+
+Autentikasi: `Authorization: Bearer <token>` + role `hr` + relasi `users.admin_id` yang valid.
+Response mengikuti envelope standar `{ success, message, data }`.
+
+| Method | Endpoint | Fungsi |
+|---|---|---|
+| GET | `/src/api/status_absen_admin.php` | Status absensi admin yang login. Opsional `?date=YYYY-MM-DD` |
+| POST | `/src/api/absen_admin.php` | Absen masuk (multipart/form-data) |
+| POST | `/src/api/absen_pulang_admin.php` | Absen pulang (multipart/form-data) |
+
+Field multipart (absen masuk dan pulang):
+
+| Field | Wajib | Keterangan |
+|---|---|---|
+| `latitude` | ya | desimal, rentang -90..90 |
+| `longitude` | ya | desimal, rentang -180..180 |
+| `waktu_lokal` | ya (pulang) | `YYYY-MM-DD HH:MM:SS` |
+| `selfie` | ya | file gambar JPG/PNG/WebP, maks 2 MB, nama file unik, disimpan privat |
+
+Field opsional absen masuk: `gps_accuracy`, `request_id`.
+
+Contoh request (Flutter, multipart):
+
+```dart
+final uri = Uri.parse('${ApiConfig.baseUrl}/absen_admin.php');
+final request = http.MultipartRequest('POST', uri)
+  ..headers['Authorization'] = 'Bearer $token'
+  ..fields['latitude'] = latitude.toString()
+  ..fields['longitude'] = longitude.toString()
+  ..fields['gps_accuracy'] = accuracy.toString()
+  ..files.add(await http.MultipartFile.fromPath('selfie', photo.path));
+final response = await request.send();
+```
+
+Response sukses (check-in / check-out):
+
+```json
+{
+  "success": true,
+  "message": "Absen masuk Admin HR berhasil disimpan",
+  "data": {
+    "tanggal": "2026-11-20",
+    "sudah_masuk": true,
+    "jam_masuk": "08:00:00",
+    "sudah_pulang": false,
+    "jam_pulang": null
+  }
+}
+```
+
+Response status:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": {
+    "tanggal": "2026-11-20",
+    "sudah_masuk": true,
+    "jam_masuk": "08:00:00",
+    "sudah_pulang": true,
+    "jam_pulang": "17:00:00"
+  }
+}
+```
+
+Error:
+
+| HTTP | Penyebab |
+|---|---|
+| `401` | token tidak ada / invalid |
+| `403` | bukan role HR atau tidak punya relasi `admin_id` |
+| `422` | koordinat di luar rentang, di luar geofence, selfie bukan JPG/PNG/WebP, atau > 2 MB |
+| `409` | sudah check-in / check-out pada tanggal tersebut |
+| `429` | terlalu sering mengirim absensi |
+| `500` | gagal menyimpan (transaksi digulung, file selfie dihapus) |
+
+Catatan migrasi: jalankan `DB/migrations/20261120_admin_api_identity.sql` sebelum memakai
+endpoint ini. Migrasi menambah `users.admin_id` (UNIQUE) dan tabel `admin_attendances`
+(UNIQUE `(admin_id, tanggal)`). Tidak ada employee record yang dibuat untuk admin.
+
 ## Menjalankan migrasi
 
 ```bash

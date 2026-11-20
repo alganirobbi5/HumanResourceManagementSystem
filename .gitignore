@@ -3,3 +3,5 @@ storage/selfies/
 
 src/common/db.local.php
 *.local.php
+
+DB/admin_employee_identity.local.php

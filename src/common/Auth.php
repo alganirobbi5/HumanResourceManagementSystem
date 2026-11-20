@@ -169,6 +169,17 @@ class Auth
             self::$profile = null;
             return null;
         }
+        // Kolom admin_id opsional agar endpoint lama tetap bekerja sebelum migrasi.
+        $row['admin_id'] = null;
+        try {
+            $adminRow = $db->selectOne('SELECT admin_id FROM users WHERE id = ? LIMIT 1', array($userId));
+            if ($adminRow && $adminRow['admin_id'] !== null) {
+                $row['admin_id'] = (int)$adminRow['admin_id'];
+            }
+        } catch (Exception $e) {
+            $row['admin_id'] = null;
+        }
+
         $row['display_name'] = trim($row['first_name'] . ' ' . $row['last_name']) !== ''
             ? trim($row['first_name'] . ' ' . $row['last_name'])
             : $row['username'];
@@ -197,6 +208,15 @@ class Auth
     {
         $u = self::identify();
         return $u ? $u['employee_id'] : null;
+    }
+
+    /** admin_id dari identitas API yang terautentikasi (bukan dari client). */
+    public static function adminId()
+    {
+        $u = self::identify();
+        return $u && isset($u['admin_id']) && $u['admin_id'] !== null
+            ? (int)$u['admin_id']
+            : null;
     }
 
     public static function isHr()
@@ -235,6 +255,17 @@ class Auth
         $u = self::requireApi();
         if ($u['role'] !== 'hr') {
             Json::error('Anda tidak memiliki izin untuk melakukan aksi ini', 403);
+        }
+        return $u;
+    }
+
+    /** Endpoint khusus Admin HR: butuh role hr DAN relasi admin eksplisit. */
+    public static function requireApiAdmin()
+    {
+        $u = self::requireApiHr();
+        $adminId = self::adminId();
+        if ($adminId === null) {
+            Json::error('Identitas Admin HR tidak tersedia', 403);
         }
         return $u;
     }
