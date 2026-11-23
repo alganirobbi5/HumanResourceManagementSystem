@@ -17,12 +17,19 @@ if (!$employee_id) {
 }
 
 $data = Json::readBody();
+if (!is_array($data) || empty($data)) {
+    $data = $_POST;
+}
 
-if (empty($data['latitude']) || empty($data['longitude'])) {
+if (!isset($data['latitude']) || trim((string)$data['latitude']) === '' ||
+    !isset($data['longitude']) || trim((string)$data['longitude']) === '') {
     Json::error('latitude dan longitude wajib diisi', 400);
 }
 
-// Validasi rentang GPS
+if (!is_numeric($data['latitude']) || !is_numeric($data['longitude'])) {
+    Json::error('Koordinat GPS tidak valid', 422);
+}
+
 $lat = (float)$data['latitude'];
 $lng = (float)$data['longitude'];
 
@@ -30,18 +37,9 @@ if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
     Json::error('Koordinat GPS berada di luar rentang yang valid', 422);
 }
 
-// Ambil tanggal dan waktu
-if (isset($data['tanggal_lokal']) && isset($data['waktu_lokal'])) {
-    $tanggal = $data['tanggal_lokal'];
-    $waktu_sekarang = $data['waktu_lokal'];
-} else {
-    $tanggal = date('Y-m-d');
-    $waktu_sekarang = date('H:i:s');
-}
+$tanggal = Config::companyToday();
+$waktu_sekarang = Config::companyNow()->format('H:i:s');
 
-// --- LOGIKA GEOFENCING ---
-
-// 1. Ambil semua lokasi dari database
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
@@ -49,75 +47,118 @@ $stmtLokasi = $pdo->query("SELECT * FROM office_locations");
 $lokasi_kantor = $stmtLokasi->fetchAll(PDO::FETCH_ASSOC);
 
 $is_dalam_radius = false;
-
-// 2. Looping cek jarak ke setiap lokasi menggunakan rumus Haversine
 foreach ($lokasi_kantor as $lokasi) {
     $kantor_lat = (float)$lokasi['latitude'];
     $kantor_lng = (float)$lokasi['longitude'];
     $radius_maksimal = (float)$lokasi['radius_meter'];
 
-    // Haversine formula
     $delta_lat = deg2rad($kantor_lat - $lat);
     $delta_lng = deg2rad($kantor_lng - $lng);
     $a = sin($delta_lat / 2) * sin($delta_lat / 2) +
          cos(deg2rad($lat)) * cos(deg2rad($kantor_lat)) *
          sin($delta_lng / 2) * sin($delta_lng / 2);
     $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-    $jarak_meter = 6371000 * $c; // 6371 km dalam meter
+    $jarak_meter = 6371000 * $c;
 
-    // Jika karyawan berada di dalam radius salah satu lokasi
     if ($jarak_meter <= $radius_maksimal) {
         $is_dalam_radius = true;
-        break; // Keluar dari loop, tidak perlu cek lokasi lain
+        break;
     }
 }
 
-// 3. Jika tidak ada satu pun lokasi yang cocok
 if (!$is_dalam_radius) {
-    http_response_code(400);
-    echo json_encode([
-        "success" => false,
-        "message" => "Anda berada di luar area absensi yang diizinkan."
-    ]);
-    exit;
+    Json::error('Anda berada di luar area absensi yang diizinkan.', 400);
 }
 
-// 4. Cek apakah sudah absen hari ini (berdasarkan employee_id dari session)
 $stmtCek = $pdo->prepare("SELECT id FROM attendances WHERE employee_id = ? AND date = ?");
 $stmtCek->execute([$employee_id, $tanggal]);
-
 if ($stmtCek->fetch()) {
-    http_response_code(400); // Bad Request
-    echo json_encode([
-        "success" => false,
-        "message" => "Anda sudah melakukan absen hari ini."
-    ]);
-    exit;
+    Json::error('Anda sudah melakukan absen hari ini.', 400);
 }
 
-// 5. Insert absen baru
-$query = "INSERT INTO attendances (employee_id, date, clock_in, clock_out, total_work, status, latitude, longitude) 
-          VALUES (?, ?, ?, '00:00:00', 0, 1, ?, ?)";
+if (!isset($_FILES['selfie'])) {
+    Json::error('Foto selfie wajib diisi', 400);
+}
+$file = $_FILES['selfie'];
+if ($file['error'] === UPLOAD_ERR_NO_FILE) {
+    Json::error('Foto selfie wajib diisi', 400);
+}
+if ($file['error'] !== UPLOAD_ERR_OK) {
+    Json::error('Upload foto gagal, silakan coba lagi', 400);
+}
+if (!is_uploaded_file($file['tmp_name'])) {
+    Json::error('File selfie tidak valid', 400);
+}
+if ($file['size'] > Config::MAX_SELFIE_BYTES) {
+    Json::error('Ukuran foto melebihi batas maksimal 2 MB', 422);
+}
 
+$finfo = new finfo(FILEINFO_MIME_TYPE);
+$mime = $finfo->file($file['tmp_name']);
+if (!in_array($mime, Config::ALLOWED_SELFIE_MIME, true)) {
+    Json::error('Tipe file foto tidak diizinkan (gunakan JPG, PNG, atau WebP)', 422);
+}
+$extMap = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
+$ext = $extMap[$mime];
+
+$relativeDir = $tanggal . '/' . $employee_id;
+$absoluteDir = rtrim(Config::SELFIE_STORAGE_DIR, '/\\') . '/' .
+    str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
+if (!is_dir($absoluteDir) && !mkdir($absoluteDir, 0755, true) && !is_dir($absoluteDir)) {
+    Json::error('Gagal menyiapkan penyimpanan foto selfie', 500);
+}
+$filename = 'selfie_' . uniqid('', true) . '.' . $ext;
+$absolutePath = $absoluteDir . DIRECTORY_SEPARATOR . $filename;
+if (!move_uploaded_file($file['tmp_name'], $absolutePath)) {
+    Json::error('Gagal menyimpan foto selfie, silakan coba lagi', 500);
+}
+@chmod($absolutePath, 0644);
+$relativePath = $relativeDir . '/' . $filename;
+
+$columns = array(
+    'employee_id', 'date', 'clock_in', 'clock_out', 'total_work',
+    'status', 'latitude', 'longitude',
+);
+$values = array(
+    $employee_id, $tanggal, $waktu_sekarang, '00:00:00', 0, 1, $lat, $lng,
+);
+
+$optional = array(
+    'gps_accuracy' => isset($data['gps_accuracy']) && is_numeric($data['gps_accuracy'])
+        ? (float)$data['gps_accuracy'] : null,
+    'selfie_path' => $relativePath,
+    'selfie_mime_type' => $mime,
+    'selfie_size' => (int)$file['size'],
+);
+foreach ($optional as $column => $value) {
+    if ($value === null) {
+        continue;
+    }
+    $check = $pdo->query("SHOW COLUMNS FROM attendances LIKE '" . $column . "'");
+    if ($check && $check->fetch()) {
+        $columns[] = $column;
+        $values[] = $value;
+    }
+}
+
+$placeholders = implode(', ', array_fill(0, count($columns), '?'));
+$query = "INSERT INTO attendances (" . implode(', ', $columns) . ") VALUES ($placeholders)";
 $stmt = $pdo->prepare($query);
-$result = $stmt->execute([$employee_id, $tanggal, $lat, $lng]);
+$result = $stmt->execute($values);
 
-if ($result) {
-    http_response_code(201);
-    echo json_encode([
-        "success" => true,
-        "message" => "Absen berhasil disimpan",
-        "data" => [
-            "jam_masuk" => $waktu_sekarang
-        ]
-    ]);
-    exit;
-} else {
-    http_response_code(500);
-    echo json_encode([
-        "success" => false,
-        "message" => "Gagal menyimpan absen"
-    ]);
-    exit;
+if (!$result) {
+    @unlink($absolutePath);
+    Json::error('Gagal menyimpan absen', 500);
 }
-?>
+
+Json::out(array(
+    'success' => true,
+    'message' => 'Absen berhasil disimpan',
+    'data' => array(
+        'jam_masuk' => $waktu_sekarang,
+        'tanggal' => $tanggal,
+        'latitude' => $lat,
+        'longitude' => $lng,
+        'selfie_path' => $relativePath,
+    ),
+), 201);
