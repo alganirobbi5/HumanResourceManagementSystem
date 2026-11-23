@@ -9,10 +9,11 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 
 $user = Auth::requireApi();
+$isHr = (isset($user['role']) && $user['role'] === 'hr');
 $employee_id_from_client = isset($_GET['employee_id']) ? $_GET['employee_id'] : null;
 
 // Karyawan biasa hanya boleh melihat profil sendiri
-if (!$user['isHr']) {
+if (!$isHr) {
     // Ambil profil dari employee_id di session, abaikan parameter dari client
     $my_employee_id = $user['employee_id'];
     if (!$my_employee_id) {
@@ -52,7 +53,7 @@ if (!$user['isHr']) {
 
 // HR dapat melihat profil karyawan lain, TAPI hanya jika employee_id valid di request
 // dan sesuai aturan role
-if ($user['isHr'] && $employee_id_from_client) {
+if ($isHr && $employee_id_from_client) {
     // Validasi: employee_id dari client harus berupa angka
     $target_employee_id = (int)$employee_id_from_client;
 
@@ -92,9 +93,16 @@ if ($user['isHr'] && $employee_id_from_client) {
     exit;
 }
 
-// Jika HR tapi tidak ada employee_id di request
-if ($user['isHr'] && !$employee_id_from_client) {
-    Json::error('employee_id harus disediakan untuk melihat profil karyawan lain', 400);
+// Admin HR tanpa employee_id: profil diambil dari identitas akun yang login.
+if ($isHr && !$employee_id_from_client) {
+    Json::ok('Profil berhasil diambil', array('data' => array(
+        'username' => $user['username'],
+        'role' => $user['role'],
+        'nama_lengkap' => $user['display_name'],
+        'first_name' => $user['display_name'],
+        'last_name' => '',
+        'sisa_cuti' => 0,
+    )));
 }
 
 // Jika tidak ada kondisi di atas terpenuhi

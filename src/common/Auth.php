@@ -132,6 +132,23 @@ class Auth
         } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
             $header = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
         }
+        if ($header === '' && function_exists('getallheaders')) {
+            $allHeaders = getallheaders();
+            if (is_array($allHeaders)) {
+                foreach ($allHeaders as $name => $value) {
+                    if (strtolower((string)$name) === 'authorization') {
+                        $header = (string)$value;
+                        break;
+                    }
+                }
+            }
+        }
+        if ($header === '' && isset($_SERVER['HTTP_X_AUTHORIZATION'])) {
+            $header = (string)$_SERVER['HTTP_X_AUTHORIZATION'];
+            if (stripos($header, 'Bearer ') !== 0) {
+                $header = 'Bearer ' . $header;
+            }
+        }
         if (preg_match('/Bearer\s+(\S+)/', $header, $m)) {
             $db = new DBConnection();
             $row = $db->selectOne('SELECT id FROM users WHERE api_token = ? AND is_active = 1', array($m[1]));

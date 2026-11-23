@@ -10,8 +10,10 @@ require_once __DIR__ . '/../common/Json.php';
 
 $user = Auth::requireApi();
 $employee_id = $user['employee_id'];
+$isHr = (isset($user['role']) && $user['role'] === 'hr');
+$lihatSemua = ($employee_id === null && $isHr);
 
-if (!$employee_id) {
+if ($employee_id === null && !$lihatSemua) {
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
 
@@ -35,20 +37,27 @@ try {
     $hasComment = false;
 }
 
-$fields = "id, type, leave_from, leave_to, status";
+$fields = "id, employee_id, type, leave_from, leave_to, status";
 if ($hasReason) $fields .= ", reason";
 if ($hasComment) $fields .= ", comment";
 
-// HANYA RIWAYAT CUTI MILIK USER YANG TERLOGIN (employee_id dari token/session)
-// Lewatkan parameter employee_id dari GET untuk keamanan
-$stmt = $pdo->prepare("SELECT $fields FROM leaves WHERE employee_id = ? ORDER BY id DESC");
-$stmt->execute([$employee_id]);
-$data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Admin HR tidak memiliki employee_id: tampilkan seluruh pengajuan.
+// Karyawan tetap hanya melihat riwayat miliknya (employee_id dari token/session).
+if ($lihatSemua) {
+    $stmt = $pdo->query("SELECT $fields FROM leaves ORDER BY id DESC");
+    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $message = 'Riwayat cuti seluruh karyawan';
+} else {
+    $stmt = $pdo->prepare("SELECT $fields FROM leaves WHERE employee_id = ? ORDER BY id DESC");
+    $stmt->execute([$employee_id]);
+    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $message = 'Riwayat cuti berhasil diambil';
+}
 
 http_response_code(200);
 echo json_encode([
     "success" => true,
-    "message" => "Riwayat cuti berhasil diambil",
+    "message" => $message,
     "data" => $data
 ]);
 exit;

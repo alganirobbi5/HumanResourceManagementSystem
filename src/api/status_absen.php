@@ -11,6 +11,24 @@ $user = Auth::requireApi();
 $employee_id = $user['employee_id'];
 
 if (!$employee_id) {
+    $isHr = (isset($user['role']) && $user['role'] === 'hr');
+    $adminId = Auth::adminId();
+    if ($isHr && $adminId !== null) {
+        require_once __DIR__ . '/../service/AdminAttendanceService.php';
+        $service = new AdminAttendanceService();
+        $statusAdmin = $service->status($adminId, date('Y-m-d'));
+        echo json_encode([
+            "success" => true,
+            "message" => "Status absensi Admin HR",
+            "data" => [
+                "sudah_masuk" => (bool)$statusAdmin['sudah_masuk'],
+                "jam_masuk" => $statusAdmin['jam_masuk'],
+                "jam_pulang" => $statusAdmin['jam_pulang'],
+                "sudah_pulang" => (bool)$statusAdmin['sudah_pulang']
+            ]
+        ]);
+        exit;
+    }
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
 

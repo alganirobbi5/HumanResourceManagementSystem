@@ -150,7 +150,15 @@ if (!empty($data->username) && !empty($data->password)) {
         $stmtAdmin->execute([$username]);
         $admin = $stmtAdmin->fetch(PDO::FETCH_ASSOC);
 
-        if ($admin && $password == $admin['password']) {
+        $adminPasswordOk = false;
+        if ($admin) {
+            $storedAdminPassword = (string)$admin['password'];
+            $adminPasswordOk = preg_match('/^\$2[aby]\$/', $storedAdminPassword) === 1
+                ? password_verify($password, $storedAdminPassword)
+                : hash_equals($storedAdminPassword, (string)$password);
+        }
+
+        if ($admin && $adminPasswordOk) {
             $userId = findOrCreateAdminApiIdentity($pdo, $admin);
             $token = null;
             if ($userId !== null) {
