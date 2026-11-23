@@ -23,11 +23,11 @@ class DBConnection
         }
 
         $config = array(
-            'host' => '31.97.199.58',
+            'host' => 'localhost',
             'port' => '3306',
             'db' => 'hris',
-            'user' => 'HRIS',
-            'pass' => 'Admin@2026',
+            'user' => '',
+            'pass' => '',
         );
 
         $localFile = __DIR__ . '/db.local.php';
