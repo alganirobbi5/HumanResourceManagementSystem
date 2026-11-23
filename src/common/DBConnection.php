@@ -12,9 +12,9 @@ class DBConnection
     private $port;
 
     /**
-     * Konfigurasi database terpusat.
-     * Prioritas: environment variables -> file lokal (tidak di-commit).
-     * Tidak ada kredensial yang disimpan di source yang Ter-track.
+     * Satu-satunya sumber konfigurasi database untuk jalur web dan API.
+     * Nilai default diambil dari db.local.php (tidak di-commit), lalu setiap
+     * field dapat ditimpa satu per satu oleh environment variable HRIS_DB_*.
      */
     public static function config()
     {
@@ -22,48 +22,57 @@ class DBConnection
             return self::$configCache;
         }
 
-        $envHost = getenv('HRIS_DB_HOST');
-        if ($envHost !== false && $envHost !== '') {
-            self::$configCache = array(
-                'host' => $envHost,
-                'port' => getenv('HRIS_DB_PORT') ?: '3306',
-                'db' => getenv('HRIS_DB_NAME') ?: 'hris',
-                'user' => (string)getenv('HRIS_DB_USER'),
-                'pass' => (string)getenv('HRIS_DB_PASSWORD'),
-            );
-            return self::$configCache;
-        }
+        $config = array(
+            'host' => '127.0.0.1',
+            'port' => '3306',
+            'db' => 'hris',
+            'user' => '',
+            'pass' => '',
+        );
 
         $localFile = __DIR__ . '/db.local.php';
         if (file_exists($localFile)) {
             $local = require $localFile;
-            if (is_array($local) && isset($local['host'], $local['db'], $local['user'], $local['pass'])) {
-                self::$configCache = array(
-                    'host' => $local['host'],
-                    'port' => isset($local['port']) ? $local['port'] : '3306',
-                    'db' => $local['db'],
-                    'user' => $local['user'],
-                    'pass' => $local['pass'],
-                );
-                return self::$configCache;
+            if (is_array($local)) {
+                foreach (array('host', 'port', 'db', 'user', 'pass') as $key) {
+                    if (array_key_exists($key, $local)) {
+                        $config[$key] = (string)$local[$key];
+                    }
+                }
             }
         }
 
-        throw new RuntimeException('Database configuration is not available. Set HRIS_DB_* environment variables or create src/common/db.local.php.');
+        $envKeys = array(
+            'HRIS_DB_HOST' => 'host',
+            'HRIS_DB_PORT' => 'port',
+            'HRIS_DB_NAME' => 'db',
+            'HRIS_DB_USER' => 'user',
+            'HRIS_DB_PASSWORD' => 'pass',
+        );
+        foreach ($envKeys as $name => $key) {
+            $value = getenv($name);
+            if ($value !== false && $value !== '') {
+                $config[$key] = (string)$value;
+            }
+        }
+
+        if ($config['user'] === '') {
+            throw new RuntimeException('Database configuration is not available. Set HRIS_DB_* environment variables or create src/common/db.local.php.');
+        }
+
+        self::$configCache = $config;
+        return self::$configCache;
     }
 
-    /** Koneksi PDO bersama untuk endpoint API. */
+    /** Koneksi PDO bersama untuk endpoint API (memakai config() yang sama dengan jalur web). */
     public static function pdo()
     {
-        // Koneksi manual ke database VPS
-        $host = 'localhost';
-        $dbname = 'hris';
-        $user = 'HRIS';
-        $pass = 'Admin@2026';
-        
-        $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        return $pdo;
+        $c = self::config();
+        $dsn = 'mysql:host=' . $c['host'] . ';port=' . $c['port'] . ';dbname=' . $c['db'] . ';charset=utf8mb4';
+        return new PDO($dsn, $c['user'], $c['pass'], array(
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 5,
+        ));
     }
 
     function __construct($params = array())
@@ -88,7 +97,10 @@ class DBConnection
         if (!$this->conn) {
             try {
                 $dsn = 'mysql:host=' . $this->host . ';port=' . $this->port . ';dbname=' . $this->dbName;
-                $this->conn = new PDO($dsn, $this->user, $this->password, array(PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8'));
+                $this->conn = new PDO($dsn, $this->user, $this->password, array(
+                    PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8',
+                    PDO::ATTR_TIMEOUT => 5,
+                ));
 
                 if (!$this->conn) {
                     $this->status_fatal = true;
