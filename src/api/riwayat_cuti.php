@@ -37,7 +37,7 @@ try {
     $hasComment = false;
 }
 
-$fields = "id, employee_id, type, leave_from, leave_to, status";
+$fields = "id, employee_id, type, leave_from, leave_to, status, FROM_UNIXTIME(created_at) AS created_at";
 if ($hasReason) $fields .= ", reason";
 if ($hasComment) $fields .= ", comment";
 

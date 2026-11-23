@@ -1,48 +1,64 @@
 <?php
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
+
+$user = Auth::requireApiHr();
+
+$bulan = isset($_GET['bulan']) && $_GET['bulan'] !== ''
+    ? (int) $_GET['bulan']
+    : (int) date('m');
+$tahun = isset($_GET['tahun']) && $_GET['tahun'] !== ''
+    ? (int) $_GET['tahun']
+    : (int) date('Y');
+
+if ($bulan < 1 || $bulan > 12 || $tahun < 2000 || $tahun > 2100) {
+    Json::error('Parameter bulan (1-12) dan tahun tidak valid', 422);
+}
 
 try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Bulan dan tahun saat ini
-    $bulan_ini = date('m');
-    $tahun_ini = date('Y');
+    $stmt = $pdo->prepare(
+        "SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS approved,
+            SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS rejected
+         FROM leaves
+         WHERE MONTH(FROM_UNIXTIME(created_at)) = ?
+           AND YEAR(FROM_UNIXTIME(created_at)) = ?"
+    );
+    $stmt->execute(array($bulan, $tahun));
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // 1. Total Pengajuan Bulan Ini
-    $stmtTotal = $pdo->prepare("SELECT COUNT(*) as total FROM leaves WHERE MONTH(created_at) = ? AND YEAR(created_at) = ?");
-    $stmtTotal->execute([$bulan_ini, $tahun_ini]);
-    $total = $stmtTotal->fetch(PDO::FETCH_ASSOC)['total'];
+    $labelBulan = date('F', mktime(0, 0, 0, $bulan, 1, $tahun)) . ' ' . $tahun;
 
-    // 2. Menunggu Persetujuan (status = 1)
-    $stmtPending = $pdo->prepare("SELECT COUNT(*) as pending FROM leaves WHERE status = 1 AND MONTH(created_at) = ? AND YEAR(created_at) = ?");
-    $stmtPending->execute([$bulan_ini, $tahun_ini]);
-    $pending = $stmtPending->fetch(PDO::FETCH_ASSOC)['pending'];
-
-    // 3. Disetujui (status = 2)
-    $stmtApproved = $pdo->prepare("SELECT COUNT(*) as approved FROM leaves WHERE status = 2 AND MONTH(created_at) = ? AND YEAR(created_at) = ?");
-    $stmtApproved->execute([$bulan_ini, $tahun_ini]);
-    $approved = $stmtApproved->fetch(PDO::FETCH_ASSOC)['approved'];
-
-    // 4. Ditolak (status = 3)
-    $stmtRejected = $pdo->prepare("SELECT COUNT(*) as rejected FROM leaves WHERE status = 3 AND MONTH(created_at) = ? AND YEAR(created_at) = ?");
-    $stmtRejected->execute([$bulan_ini, $tahun_ini]);
-    $rejected = $stmtRejected->fetch(PDO::FETCH_ASSOC)['rejected'];
-
-    echo json_encode([
-        "status" => "success",
-        "data" => [
-            "bulan" => date('F Y'),
-            "total" => (int)$total,
-            "pending" => (int)$pending,
-            "approved" => (int)$approved,
-            "rejected" => (int)$rejected
-        ]
-    ]);
+    http_response_code(200);
+    echo json_encode(array(
+        'success' => true,
+        'status' => 'success',
+        'message' => 'Ringkasan cuti bulanan',
+        'data' => array(
+            'bulan' => $labelBulan,
+            'bulan_angka' => $bulan,
+            'tahun' => $tahun,
+            'total' => (int) $row['total'],
+            'pending' => (int) $row['pending'],
+            'approved' => (int) $row['approved'],
+            'rejected' => (int) $row['rejected'],
+        ),
+    ));
 } catch (PDOException $e) {
-    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+    http_response_code(500);
+    echo json_encode(array(
+        'success' => false,
+        'status' => 'error',
+        'message' => 'Gagal memuat ringkasan cuti',
+    ));
 }
-?>
