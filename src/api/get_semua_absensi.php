@@ -14,6 +14,7 @@ $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 // Mengambil semua data absensi, digabung dengan nama karyawan
 $query = "SELECT a.id, a.date, a.clock_in, a.clock_out, a.status, 
+                 a.latitude, a.longitude, 
                  e.first_name, e.last_name 
           FROM attendances a 
           LEFT JOIN employees e ON a.employee_id = e.id 
