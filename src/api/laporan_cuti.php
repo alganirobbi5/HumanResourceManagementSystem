@@ -10,6 +10,18 @@ require_once __DIR__ . '/../common/Json.php';
 
 $user = Auth::requireApiHr();  // Hanya role HR yang boleh
 
+$bulan = isset($_GET['bulan']) && $_GET['bulan'] !== '' ? (int)$_GET['bulan'] : null;
+$tahun = isset($_GET['tahun']) && $_GET['tahun'] !== '' ? (int)$_GET['tahun'] : null;
+$where = '';
+$params = array();
+if ($bulan !== null || $tahun !== null) {
+    if ($bulan === null || $tahun === null || $bulan < 1 || $bulan > 12 || $tahun < 2000 || $tahun > 2100) {
+        Json::error('Parameter bulan (1-12) dan tahun tidak valid', 422);
+    }
+    $where = " WHERE MONTH(FROM_UNIXTIME(l.created_at)) = ? AND YEAR(FROM_UNIXTIME(l.created_at)) = ?";
+    $params = array($bulan, $tahun);
+}
+
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
@@ -42,9 +54,11 @@ $query = "SELECT
             $extra
           FROM leaves l
           LEFT JOIN employees e ON e.id = l.employee_id
+          $where
           ORDER BY l.id DESC";
 
-$stmt = $pdo->query($query);
+$stmt = $pdo->prepare($query);
+$stmt->execute($params);
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 http_response_code(200);
