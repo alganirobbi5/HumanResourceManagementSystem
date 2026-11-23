@@ -53,11 +53,17 @@ class DBConnection
     }
 
     /** Koneksi PDO bersama untuk endpoint API. */
-    public static function pdo()
+        public static function pdo()
     {
-        $c = self::config();
-        $dsn = 'mysql:host=' . $c['host'] . ';port=' . $c['port'] . ';dbname=' . $c['db'] . ';charset=utf8mb4';
-        return new PDO($dsn, $c['user'], $c['pass'], array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION));
+        // Koneksi manual ke database VPS
+        $host = 'localhost';
+        $dbname = 'hris';
+        $user = 'HRIS';
+        $pass = 'Admin@2026';
+        
+        $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        return $pdo;
     }
 
     function __construct($params = array())
