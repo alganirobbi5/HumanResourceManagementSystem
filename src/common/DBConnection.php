@@ -3,6 +3,7 @@
 class DBConnection
 {
     private static $configCache = null;
+    private static $safeErrors = false;
 
     private $conn;
     private $host;
@@ -12,9 +13,11 @@ class DBConnection
     private $port;
 
     /**
-     * Satu-satunya sumber konfigurasi database untuk jalur web dan API.
-     * Nilai default diambil dari db.local.php (tidak di-commit), lalu setiap
-     * field dapat ditimpa satu per satu oleh environment variable HRIS_DB_*.
+     * Satu-satunya sumber konfigurasi database untuk web dan API.
+     *
+     * HRIS_ENV=production : hanya HRIS_DB_* yang dipakai, db.local.php diabaikan.
+     * HRIS_ENV=local (default) : db.local.php (tidak di-commit) dipakai, HRIS_DB_* tetap
+     * dapat menimpa per field untuk keperluan pengujian.
      */
     public static function config()
     {
@@ -22,24 +25,38 @@ class DBConnection
             return self::$configCache;
         }
 
-        $config = array(
-            'host' => 'localhost',
-            'port' => '3306',
-            'db' => 'hris',
-            'user' => '',
-            'pass' => '',
-        );
+        $mode = strtolower(trim((string)getenv('HRIS_ENV')));
+        if ($mode === '') {
+            $mode = 'local';
+        }
+        if ($mode !== 'local' && $mode !== 'production') {
+            throw new RuntimeException('Invalid HRIS_ENV. Use "local" or "production".');
+        }
 
-        $localFile = __DIR__ . '/db.local.php';
-        if (file_exists($localFile)) {
-            $local = require $localFile;
-            if (is_array($local)) {
-                foreach (array('host', 'port', 'db', 'user', 'pass') as $key) {
-                    if (array_key_exists($key, $local)) {
-                        $config[$key] = (string)$local[$key];
-                    }
-                }
+        if ($mode === 'production') {
+            $config = array(
+                'host' => 'localhost',
+                'port' => '3306',
+                'db' => 'hris',
+                'user' => '',
+                'pass' => '',
+            );
+        } else {
+            $localFile = __DIR__ . '/db.local.php';
+            if (!file_exists($localFile)) {
+                throw new RuntimeException('Local database configuration is missing. Create src/common/db.local.php (not committed) or set HRIS_ENV=production with HRIS_DB_* variables.');
             }
+            $local = require $localFile;
+            if (!is_array($local)) {
+                throw new RuntimeException('Local database configuration is invalid.');
+            }
+            $config = array(
+                'host' => isset($local['host']) ? (string)$local['host'] : '',
+                'port' => isset($local['port']) ? (string)$local['port'] : '3306',
+                'db' => isset($local['db']) ? (string)$local['db'] : '',
+                'user' => isset($local['user']) ? (string)$local['user'] : '',
+                'pass' => array_key_exists('pass', $local) ? (string)$local['pass'] : '',
+            );
         }
 
         $envKeys = array(
@@ -56,12 +73,19 @@ class DBConnection
             }
         }
 
-        if ($config['user'] === '') {
-            throw new RuntimeException('Database configuration is not available. Set HRIS_DB_* environment variables or create src/common/db.local.php.');
+        if ($config['host'] === '' || $config['db'] === '' || $config['user'] === '' || $config['pass'] === '') {
+            throw new RuntimeException('Database configuration is incomplete. Check HRIS_ENV and the active configuration source.');
         }
 
+        $config['mode'] = $mode;
         self::$configCache = $config;
         return self::$configCache;
+    }
+
+    /** Dipakai endpoint diagnostik agar kegagalan koneksi tidak menampilkan detail internal. */
+    public static function enableSafeErrors()
+    {
+        self::$safeErrors = true;
     }
 
     /** Koneksi PDO bersama untuk endpoint API (memakai config() yang sama dengan jalur web). */
@@ -96,18 +120,14 @@ class DBConnection
     {
         if (!$this->conn) {
             try {
-                $dsn = 'mysql:host=' . $this->host . ';port=' . $this->port . ';dbname=' . $this->dbName;
+                $dsn = 'mysql:host=' . $this->host . ';port=' . $this->port . ';dbname=' . $this->dbName . ';charset=utf8mb4';
                 $this->conn = new PDO($dsn, $this->user, $this->password, array(
-                    PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8',
                     PDO::ATTR_TIMEOUT => 5,
                 ));
-
-                if (!$this->conn) {
-                    $this->status_fatal = true;
-                    echo 'Connection BDD failed';
-                    die();
-                }
             } catch (Exception $e) {
+                if (self::$safeErrors) {
+                    throw new RuntimeException('Database connection failed', 0, $e);
+                }
                 die('Erreur : ' . $e->getMessage());
             }
         }
