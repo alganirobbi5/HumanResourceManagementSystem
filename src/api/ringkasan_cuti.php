@@ -2,8 +2,10 @@
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
+require_once __DIR__ . '/../common/DBConnection.php';
+
 try {
-    $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
+    $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Bulan dan tahun saat ini
@@ -26,7 +28,7 @@ try {
     $approved = $stmtApproved->fetch(PDO::FETCH_ASSOC)['approved'];
 
     // 4. Ditolak (status = 3)
-    $stmtRejected = $pdo->prepare("SELECT COUNT(*) as rejected FROM leaves WHERE status = 3 AND MONTH(created_at) = ? AND YEAR($tahun_ini) = ?");
+    $stmtRejected = $pdo->prepare("SELECT COUNT(*) as rejected FROM leaves WHERE status = 3 AND MONTH(created_at) = ? AND YEAR(created_at) = ?");
     $stmtRejected->execute([$bulan_ini, $tahun_ini]);
     $rejected = $stmtRejected->fetch(PDO::FETCH_ASSOC)['rejected'];
 

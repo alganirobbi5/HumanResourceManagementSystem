@@ -53,7 +53,7 @@ class DBConnection
     }
 
     /** Koneksi PDO bersama untuk endpoint API. */
-        public static function pdo()
+    public static function pdo()
     {
         // Koneksi manual ke database VPS
         $host = 'localhost';

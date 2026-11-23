@@ -12,7 +12,6 @@ $data = json_decode(file_get_contents("php://input"));
 
 if (!empty($data->employee_id) && !empty($data->start_date) && !empty($data->end_date) && !empty($data->reason)) {
     try {
-        // GUNAKAN PDO MANUAL
         $pdo = DBConnection::pdo();
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 

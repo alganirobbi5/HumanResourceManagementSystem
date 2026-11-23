@@ -18,22 +18,22 @@ if (!$employee_id) {
 
 $data = Json::readBody();
 
-if (empty($data->latitude) || empty($data->longitude)) {
+if (empty($data['latitude']) || empty($data['longitude'])) {
     Json::error('latitude dan longitude wajib diisi', 400);
 }
 
 // Validasi rentang GPS
-$lat = (float)$data->latitude;
-$lng = (float)$data->longitude;
+$lat = (float)$data['latitude'];
+$lng = (float)$data['longitude'];
 
 if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
     Json::error('Koordinat GPS berada di luar rentang yang valid', 422);
 }
 
 // Ambil tanggal dan waktu
-if (isset($data->tanggal_lokal) && isset($data->waktu_lokal)) {
-    $tanggal = $data->tanggal_lokal;
-    $waktu_sekarang = $data->waktu_lokal;
+if (isset($data['tanggal_lokal']) && isset($data['waktu_lokal'])) {
+    $tanggal = $data['tanggal_lokal'];
+    $waktu_sekarang = $data['waktu_lokal'];
 } else {
     $tanggal = date('Y-m-d');
     $waktu_sekarang = date('H:i:s');
