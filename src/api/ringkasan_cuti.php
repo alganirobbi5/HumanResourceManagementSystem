@@ -24,15 +24,39 @@ try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+    // Kolom status di skema lama bernama `staus` (typo); produksi mungkin
+    // sudah memakai `status`. Deteksi kolom yang tersedia agar query tidak
+    // gagal dengan "unknown column".
+    $statusColumn = 'staus';
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'status'");
+        if ($col && $col->fetch()) {
+            $statusColumn = 'status';
+        }
+    } catch (PDOException $e) {
+        $statusColumn = 'staus';
+    }
+
+    $deletedFilter = '';
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'deleted_at'");
+        if ($col && $col->fetch()) {
+            $deletedFilter = " AND deleted_at IS NULL";
+        }
+    } catch (PDOException $e) {
+        $deletedFilter = '';
+    }
+
     $stmt = $pdo->prepare(
         "SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS pending,
-            SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS approved,
-            SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS rejected
+            SUM(CASE WHEN $statusColumn = 1 THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN $statusColumn = 2 THEN 1 ELSE 0 END) AS approved,
+            SUM(CASE WHEN $statusColumn = 3 THEN 1 ELSE 0 END) AS rejected
          FROM leaves
          WHERE MONTH(FROM_UNIXTIME(created_at)) = ?
-           AND YEAR(FROM_UNIXTIME(created_at)) = ?"
+           AND YEAR(FROM_UNIXTIME(created_at)) = ?
+           $deletedFilter"
     );
     $stmt->execute(array($bulan, $tahun));
     $row = $stmt->fetch(PDO::FETCH_ASSOC);

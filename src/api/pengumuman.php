@@ -18,6 +18,10 @@ try {
     try {
         $col = $pdo->query("SHOW COLUMNS FROM notices LIKE 'attachment'");
         $hasAttachment = $col && $col->fetch() !== false;
+        if (!$hasAttachment) {
+            $pdo->exec("ALTER TABLE notices ADD COLUMN attachment LONGTEXT NULL");
+            $hasAttachment = true;
+        }
     } catch (PDOException $e) {
         $hasAttachment = false;
     }

@@ -35,6 +35,10 @@ try {
     try {
         $col = $pdo->query("SHOW COLUMNS FROM notices LIKE 'attachment'");
         $hasAttachment = $col && $col->fetch() !== false;
+        if (!$hasAttachment) {
+            $pdo->exec("ALTER TABLE notices ADD COLUMN attachment LONGTEXT NULL");
+            $hasAttachment = true;
+        }
     } catch (PDOException $e) {
         $hasAttachment = false;
     }
@@ -83,7 +87,7 @@ try {
 function validateAttachment($value)
 {
     $raw = (string)$value;
-    if (strlen($raw) > 8000000) {
+    if (strlen($raw) > 14000000) {
         return array('ok' => false, 'message' => 'Lampiran terlalu besar');
     }
 
@@ -107,6 +111,10 @@ function validateAttachment($value)
         'image/gif' => array('gif'),
         'application/pdf' => array('pdf'),
         'text/plain' => array('txt'),
+        'application/msword' => array('doc'),
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => array('docx'),
+        'application/vnd.ms-excel' => array('xls'),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => array('xlsx'),
     );
     if (!isset($allowed[$mime])) {
         return array('ok' => false, 'message' => 'Jenis lampiran tidak diizinkan');
@@ -120,7 +128,7 @@ function validateAttachment($value)
     }
 
     $bytes = base64_decode($m[2], true);
-    if ($bytes === false || strlen($bytes) > 5 * 1024 * 1024) {
+    if ($bytes === false || strlen($bytes) > 10 * 1024 * 1024) {
         return array('ok' => false, 'message' => 'Isi lampiran tidak valid atau terlalu besar');
     }
 
