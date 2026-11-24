@@ -89,8 +89,14 @@ $designations=$conn->getAll("SELECT * FROM `employee_designations`");
                                 <div class="clearfix"></div>
                             </div>
                             <div class="x_content">
+                                <?php if (!empty($_GET['saved'])) { ?>
+                                <div class="alert alert-success">Karyawan berhasil ditambahkan dan akun login sudah dibuat.</div>
+                                <?php } ?>
+                                <?php if (!empty($_GET['error'])) { ?>
+                                <div class="alert alert-danger"><?= htmlspecialchars($_GET['error']) ?></div>
+                                <?php } ?>
 
-                                <form class="form-horizontal form-label-left" novalidate>
+                                <form action="../../src/store/EmployeeStore.php" method="post" class="form-horizontal form-label-left" novalidate>
 
                                     <p>For alternative validation library <code>parsleyJS</code> check out in the <a href="form.html">form page</a>
                                     </p>
@@ -170,6 +176,12 @@ $designations=$conn->getAll("SELECT * FROM `employee_designations`");
                                         </label>
                                         <div class="col-md-6 col-sm-6 col-xs-12">
                                             <input id="occupation" type="text" name="occupation" data-validate-length-range="5,20" class="optional form-control col-md-7 col-xs-12">
+                                        </div>
+                                    </div>
+                                    <div class="item form-group">
+                                        <label for="username" class="control-label col-md-3">Username Login <span class="required">*</span></label>
+                                        <div class="col-md-6 col-sm-6 col-xs-12">
+                                            <input id="username" type="text" name="username" required="required" class="form-control col-md-7 col-xs-12">
                                         </div>
                                     </div>
                                     <div class="item form-group">

@@ -81,6 +81,61 @@ function findOrCreateAdminApiIdentity($pdo, array $admin)
     }
 }
 
+/**
+ * Pastikan karyawan lama yang belum punya akun API bisa login lewat
+ * employees.user_name + employees.password, lalu dibuatkan identitas users.
+ * Kredensial diverifikasi dari employees, employee_id tidak pernah ditebak.
+ */
+function findOrCreateEmployeeApiIdentity($pdo, $username, $password)
+{
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM employees LIKE 'status'");
+        $statusColumn = $col && $col->fetch() ? ', status' : '';
+
+        $stmt = $pdo->prepare("SELECT id, user_name, password$statusColumn FROM employees WHERE user_name = ? LIMIT 1");
+        $stmt->execute([$username]);
+        $employee = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$employee) {
+            return null;
+        }
+        if ($statusColumn !== '' && isset($employee['status']) && (int)$employee['status'] !== 1) {
+            return null;
+        }
+
+        $storedPassword = (string)$employee['password'];
+        $passwordOk = preg_match('/^\$2[aby]\$/', $storedPassword) === 1
+            ? password_verify($password, $storedPassword)
+            : hash_equals($storedPassword, (string)$password);
+        if (!$passwordOk) {
+            return null;
+        }
+
+        $existing = $pdo->prepare('SELECT id FROM users WHERE employee_id = ? LIMIT 1');
+        $existing->execute([(int)$employee['id']]);
+        if ($existing->fetch()) {
+            return null;
+        }
+
+        $taken = $pdo->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+        $taken->execute([$username]);
+        if ($taken->fetch()) {
+            return null;
+        }
+
+        $pdo->prepare(
+            "INSERT INTO users (employee_id, username, password_hash, role, is_active)
+             VALUES (?, ?, ?, 'employee', 1)"
+        )->execute(array(
+            (int)$employee['id'],
+            $username,
+            password_hash($password, PASSWORD_BCRYPT)
+        ));
+        return (int)$pdo->lastInsertId();
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
 $data = json_decode(file_get_contents("php://input"));
 
 if (!empty($data->username) && !empty($data->password)) {
@@ -90,6 +145,8 @@ if (!empty($data->username) && !empty($data->password)) {
     try {
         $pdo = DBConnection::pdo();
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+        findOrCreateEmployeeApiIdentity($pdo, $username, $password);
 
         // 1. AKUN MODERN (tabel users)
         $stmt = $pdo->prepare("SELECT u.*, e.id AS employee_row_id, e.first_name, e.last_name

@@ -1,0 +1,54 @@
+<?php
+
+header("Access-Control-Allow-Origin: *");
+header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Authorization");
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
+require_once __DIR__ . '/../service/EmployeeAccountService.php';
+
+Auth::requireApiHr();
+
+$data = Json::readRequest();
+$action = isset($data['action']) ? strtolower(trim((string)$data['action'])) : '';
+$employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
+if ($employeeId <= 0) {
+    Json::error('employee_id wajib diisi', 400);
+}
+
+try {
+    $service = new EmployeeAccountService();
+    if ($action === 'deactivate') {
+        $service->setActive($employeeId, 0);
+        Json::ok('Karyawan dinonaktifkan dan akun login dinonaktifkan');
+    }
+    if ($action !== 'update') {
+        Json::error('Aksi tidak dikenal', 400);
+    }
+    $fields = array('first_name', 'last_name', 'email', 'mobile_no', 'gender',
+        'department_id', 'designation_id', 'status', 'username', 'password');
+    $payload = array();
+    foreach ($fields as $field) {
+        if (array_key_exists($field, $data)) {
+            $payload[$field] = $data[$field];
+        }
+    }
+    if (!$payload) {
+        Json::error('Tidak ada data yang diubah', 400);
+    }
+    $service->update($employeeId, $payload);
+    Json::ok('Data karyawan dan akun login berhasil disinkronkan');
+} catch (InvalidArgumentException $e) {
+    Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);
+} catch (RuntimeException $e) {
+    Json::error($e->getMessage(), (int)$e->getCode() === 409 ? 409 : 500);
+} catch (Exception $e) {
+    Json::error('Gagal menyinkronkan data karyawan', 500);
+}
