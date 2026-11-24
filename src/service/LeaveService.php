@@ -14,8 +14,88 @@ class LeaveService
     public function __construct(DBConnection $db = null)
     {
         $this->db = $db ?: new DBConnection();
+        $this->ensureTables();
         $this->notifications = new NotificationService($this->db);
         $this->audit = new AuditLog($this->db);
+    }
+
+    /** Pastikan tabel fitur cuti tersedia walau migrasi belum dijalankan di produksi. */
+    private function ensureTables()
+    {
+        $tables = array(
+            'leave_balances' => 'CREATE TABLE IF NOT EXISTS leave_balances (
+                id INT(11) NOT NULL AUTO_INCREMENT,
+                employee_id INT(11) NOT NULL,
+                leave_type VARCHAR(30) NOT NULL DEFAULT "annual",
+                entitlement_year YEAR NOT NULL,
+                entitled_days DECIMAL(5,1) NOT NULL DEFAULT 0,
+                used_days DECIMAL(5,1) NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_leave_balance (employee_id, leave_type, entitlement_year)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
+            'leave_requests' => 'CREATE TABLE IF NOT EXISTS leave_requests (
+                id INT(11) NOT NULL AUTO_INCREMENT,
+                employee_id INT(11) NOT NULL,
+                reason TEXT NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                total_days DECIMAL(5,1) NOT NULL,
+                replacement_employee_id INT(11) DEFAULT NULL,
+                status ENUM("pending","approved","rejected") NOT NULL DEFAULT "pending",
+                submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                reviewed_by INT(11) DEFAULT NULL,
+                reviewed_at TIMESTAMP NULL DEFAULT NULL,
+                rejection_reason TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_leave_requests_employee (employee_id),
+                KEY idx_leave_requests_status (status),
+                KEY idx_leave_requests_dates (start_date, end_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
+            'notifications' => 'CREATE TABLE IF NOT EXISTS notifications (
+                id INT(11) NOT NULL AUTO_INCREMENT,
+                recipient_user_id INT(11) NOT NULL,
+                title VARCHAR(150) NOT NULL,
+                message TEXT NOT NULL,
+                type VARCHAR(50) NOT NULL DEFAULT "general",
+                related_entity_type VARCHAR(50) DEFAULT NULL,
+                related_entity_id INT(11) DEFAULT NULL,
+                read_at TIMESTAMP NULL DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_notifications_recipient (recipient_user_id, read_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
+            'audit_logs' => 'CREATE TABLE IF NOT EXISTS audit_logs (
+                id INT(11) NOT NULL AUTO_INCREMENT,
+                actor_user_id INT(11) DEFAULT NULL,
+                action VARCHAR(50) NOT NULL,
+                entity_type VARCHAR(50) NOT NULL,
+                entity_id INT(11) DEFAULT NULL,
+                before_data TEXT,
+                after_data TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_audit_entity (entity_type, entity_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
+        );
+
+        foreach ($tables as $name => $sql) {
+            try {
+                $check = $this->db->getPdo();
+                if (!$check) {
+                    continue;
+                }
+                $exists = $check->query("SHOW TABLES LIKE '" . $name . "'");
+                if (!$exists || !$exists->fetch()) {
+                    $check->exec($sql);
+                }
+            } catch (PDOException $e) {
+                // Biarkan endpoint lain yang melaporkan error bila memang gagal.
+            }
+        }
     }
 
     /** Saldo cuti karyawan; otomatis dibuat dengan jatah default bila belum ada. */
