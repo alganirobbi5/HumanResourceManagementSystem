@@ -32,8 +32,18 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Ambil data absensi (Join dengan tabel employees untuk dapat nama)
+    $selfieColumn = '';
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'selfie_path'");
+        if ($col && $col->fetch()) {
+            $selfieColumn = ', a.selfie_path';
+        }
+    } catch (PDOException $e) {
+        $selfieColumn = '';
+    }
+
     $query = "SELECT a.id, a.date, a.clock_in, a.clock_out, a.status,
-                     a.latitude, a.longitude,
+                     a.latitude, a.longitude$selfieColumn,
                      e.first_name, e.last_name
               FROM attendances a
               LEFT JOIN employees e ON a.employee_id = e.id ";

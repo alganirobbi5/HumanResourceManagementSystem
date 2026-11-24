@@ -81,9 +81,34 @@ $values = array(
     $employee_id, $tanggal, $waktu_sekarang, '00:00:00', 0, 1, $lat, $lng,
 );
 
+$selfiePath = null;
+if (isset($data['selfie']) && is_string($data['selfie']) &&
+    preg_match('#^data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=\r\n]+)$#', $data['selfie'], $m)) {
+    $mime = strtolower($m[1]);
+    $allowedMime = array('image/jpeg', 'image/png', 'image/webp');
+    $bytes = base64_decode($m[2], true);
+    if (in_array($mime, $allowedMime, true) && $bytes !== false &&
+        strlen($bytes) <= Config::MAX_SELFIE_BYTES) {
+        $extMap = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
+        $relativeDir = $tanggal . '/' . $employee_id;
+        $absoluteDir = rtrim(Config::SELFIE_STORAGE_DIR, '/\\') . '/' .
+            str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
+        if ((is_dir($absoluteDir) || mkdir($absoluteDir, 0755, true)) && is_dir($absoluteDir)) {
+            $filename = 'selfie_' . uniqid('', true) . '.' . $extMap[$mime];
+            $absolutePath = $absoluteDir . DIRECTORY_SEPARATOR . $filename;
+            if (file_put_contents($absolutePath, $bytes) !== false) {
+                @chmod($absolutePath, 0644);
+                $selfiePath = $relativeDir . '/' . $filename;
+            }
+        }
+    }
+}
+
 $optional = array(
     'gps_accuracy' => isset($data['gps_accuracy']) && is_numeric($data['gps_accuracy'])
         ? (float)$data['gps_accuracy'] : null,
+    'selfie_path' => $selfiePath,
+    'selfie_mime_type' => $selfiePath !== null && isset($mime) ? $mime : null,
 );
 foreach ($optional as $column => $value) {
     if ($value === null) {
