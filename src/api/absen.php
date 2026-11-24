@@ -16,10 +16,7 @@ if (!$employee_id) {
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
 
-$data = Json::readBody();
-if (!is_array($data) || empty($data)) {
-    $data = $_POST;
-}
+$data = Json::readRequest();
 
 if (!isset($data['latitude']) || trim((string)$data['latitude']) === '' ||
     !isset($data['longitude']) || trim((string)$data['longitude']) === '') {

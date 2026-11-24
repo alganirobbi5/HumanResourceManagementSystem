@@ -30,4 +30,16 @@ class Json
         $data = json_decode($raw, true);
         return is_array($data) ? $data : array();
     }
+
+    /**
+     * Baca field request dari JSON maupun multipart/form-data.
+     * Flutter mengirim absen lewat multipart, jadi $_POST harus tetap
+     * terbaca walaupun php://input tidak berisi JSON.
+     */
+    public static function readRequest()
+    {
+        $post = isset($_POST) && is_array($_POST) ? $_POST : array();
+        $json = self::readBody();
+        return array_merge($post, $json);
+    }
 }
