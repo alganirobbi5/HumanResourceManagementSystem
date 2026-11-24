@@ -27,6 +27,22 @@ if ($tanggal !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
     exit;
 }
 
+// Filter rentang: /laporan_absensi.php?start_date=2026-11-01&end_date=2026-11-30
+$startDate = isset($_GET['start_date']) ? trim((string)$_GET['start_date']) : '';
+$endDate = isset($_GET['end_date']) ? trim((string)$_GET['end_date']) : '';
+if (($startDate !== '' || $endDate !== '') &&
+    (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) ||
+     !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate))) {
+    http_response_code(400);
+    echo json_encode(["status" => "error", "message" => "Format rentang tanggal tidak valid."]);
+    exit;
+}
+if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
+    http_response_code(400);
+    echo json_encode(["status" => "error", "message" => "Tanggal akhir tidak boleh sebelum tanggal mulai."]);
+    exit;
+}
+
 try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -63,7 +79,11 @@ try {
     $conditions = array();
     $params = array();
     if ($whereDeleted !== '') $conditions[] = $whereDeleted;
-    if ($tanggal !== '') {
+    if ($startDate !== '' && $endDate !== '') {
+        $conditions[] = "a.date BETWEEN ? AND ?";
+        $params[] = $startDate;
+        $params[] = $endDate;
+    } elseif ($tanggal !== '') {
         $conditions[] = "a.date = ?";
         $params[] = $tanggal;
     }
