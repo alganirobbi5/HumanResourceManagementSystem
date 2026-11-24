@@ -42,15 +42,30 @@ try {
         $selfieColumn = '';
     }
 
+    // Sembunyikan data yang sudah dihapus HR (soft-delete).
+    $whereDeleted = '';
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
+        if ($col && $col->fetch()) {
+            $whereDeleted = "a.deleted_at IS NULL";
+        }
+    } catch (PDOException $e) {
+        $whereDeleted = '';
+    }
+
     $query = "SELECT a.id, a.date, a.clock_in, a.clock_out, a.status,
                      a.latitude, a.longitude$selfieColumn,
                      e.first_name, e.last_name
               FROM attendances a
               LEFT JOIN employees e ON a.employee_id = e.id ";
-    $params = array();
+    $conditions = array();
+    if ($whereDeleted !== '') $conditions[] = $whereDeleted;
     if ($tanggal !== '') {
-        $query .= "WHERE a.date = ? ";
+        $conditions[] = "a.date = ?";
         $params[] = $tanggal;
+    }
+    if (!empty($conditions)) {
+        $query .= "WHERE " . implode(" AND ", $conditions) . " ";
     }
     $query .= "ORDER BY a.date DESC, a.clock_in DESC";
 
