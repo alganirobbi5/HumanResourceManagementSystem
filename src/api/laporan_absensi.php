@@ -32,9 +32,10 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Ambil data absensi (Join dengan tabel employees untuk dapat nama)
-    $query = "SELECT a.id, a.date, a.clock_in, a.clock_out, a.status, 
-                     e.first_name, e.last_name 
-              FROM attendances a 
+    $query = "SELECT a.id, a.date, a.clock_in, a.clock_out, a.status,
+                     a.latitude, a.longitude,
+                     e.first_name, e.last_name
+              FROM attendances a
               LEFT JOIN employees e ON a.employee_id = e.id ";
     $params = array();
     if ($tanggal !== '') {
