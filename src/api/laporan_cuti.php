@@ -18,12 +18,22 @@ if ($bulan !== null || $tahun !== null) {
     if ($bulan === null || $tahun === null || $bulan < 1 || $bulan > 12 || $tahun < 2000 || $tahun > 2100) {
         Json::error('Parameter bulan (1-12) dan tahun tidak valid', 422);
     }
-    $where = " WHERE MONTH(FROM_UNIXTIME(l.created_at)) = ? AND YEAR(FROM_UNIXTIME(l.created_at)) = ?";
+    $where = " AND MONTH(FROM_UNIXTIME(l.created_at)) = ? AND YEAR(FROM_UNIXTIME(l.created_at)) = ?";
     $params = array($bulan, $tahun);
 }
 
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+// Sembunyikan data yang sudah dihapus HR (soft-delete).
+$hasDeletedAt = false;
+try {
+    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'deleted_at'");
+    $hasDeletedAt = $col && $col->fetch() !== false;
+} catch (PDOException $e) {
+    $hasDeletedAt = false;
+}
+$where = ($hasDeletedAt ? " WHERE l.deleted_at IS NULL" : " WHERE 1=1") . $where;
 
 // Kolom opsional; tetap kompatibel jika migrasi belum dijalankan.
 $hasReason = false;
