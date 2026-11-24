@@ -127,7 +127,11 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
                                                 <td><?= htmlspecialchars($row['latitude'] . ', ' . $row['longitude']) ?></td>
                                                 <td><span class="label label-success"><?= htmlspecialchars($row['status']) ?></span></td>
                                                 <td>
-                                                    <button type="button" class="btn btn-xs btn-info btn-detail"
+                                                <?php
+                                                $photoIn = !empty($row['selfie_path']) ? '../../src/api/selfie.php?id=' . (int)$row['id'] . '&type=in' : '';
+                                                $photoOut = !empty($row['selfie_out_path']) ? '../../src/api/selfie.php?id=' . (int)$row['id'] . '&type=out' : '';
+                                                ?>
+                                                <button type="button" class="btn btn-xs btn-info btn-detail"
                                                             data-id="<?= (int)$row['id'] ?>"
                                                             data-name="<?= htmlspecialchars(trim($row['first_name'] . ' ' . $row['last_name'])) ?>"
                                                             data-date="<?= htmlspecialchars($row['date']) ?>"
@@ -135,7 +139,8 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
                                                             data-loc="<?= htmlspecialchars($row['latitude'] . ', ' . $row['longitude']) ?>"
                                                             data-acc="<?= htmlspecialchars($row['gps_accuracy'] !== null ? round($row['gps_accuracy']) . ' m' : '-') ?>"
                                                             data-status="<?= htmlspecialchars($row['status']) ?>"
-                                                            data-has-photo="<?= $row['selfie_path'] ? '1' : '0' ?>">
+                                                            data-photo-in="<?= htmlspecialchars($photoIn) ?>"
+                                                            data-photo-out="<?= htmlspecialchars($photoOut) ?>">
                                                         Detail
                                                     </button>
                                                 </td>
@@ -180,9 +185,15 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
                         <p><strong>Lokasi:</strong> <span id="dLoc"></span></p>
                         <p><strong>Akurasi GPS:</strong> <span id="dAcc"></span></p>
                         <p><strong>Status:</strong> <span id="dStatus"></span></p>
-                        <div id="dPhotoWrap">
-                            <p><strong>Selfie:</strong></p>
-                            <img id="dPhoto" style="max-width:100%;" alt="Selfie absensi">
+                        <div class="row">
+                            <div class="col-sm-6" id="dPhotoInWrap">
+                                <p><strong>Selfie Masuk</strong></p>
+                                <img id="dPhotoIn" class="img-responsive" style="max-width:100%;" alt="Selfie absen masuk">
+                            </div>
+                            <div class="col-sm-6" id="dPhotoOutWrap">
+                                <p><strong>Selfie Pulang</strong></p>
+                                <img id="dPhotoOut" class="img-responsive" style="max-width:100%;" alt="Selfie absen pulang">
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -211,12 +222,21 @@ $(function () {
         $('#dLoc').text($btn.data('loc'));
         $('#dAcc').text($btn.data('acc'));
         $('#dStatus').text($btn.data('status'));
-        if ($btn.data('has-photo') === '1') {
-            $('#dPhotoWrap').show();
-            $('#dPhoto').attr('src', '../../src/api/selfie.php?id=' + $btn.data('id'));
+        var photoIn = $btn.data('photo-in');
+        var photoOut = $btn.data('photo-out');
+        if (photoIn) {
+            $('#dPhotoInWrap').show();
+            $('#dPhotoIn').attr('src', photoIn);
         } else {
-            $('#dPhotoWrap').hide();
-            $('#dPhoto').attr('src', '');
+            $('#dPhotoInWrap').hide();
+            $('#dPhotoIn').attr('src', '');
+        }
+        if (photoOut) {
+            $('#dPhotoOutWrap').show();
+            $('#dPhotoOut').attr('src', photoOut);
+        } else {
+            $('#dPhotoOutWrap').hide();
+            $('#dPhotoOut').attr('src', '');
         }
         $('#detailModal').modal('show');
     });

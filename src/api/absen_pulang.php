@@ -8,6 +8,7 @@ header("Access-Control-Allow-Methods: POST");
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/Config.php';
+require_once __DIR__ . '/../service/AttendanceService.php';
 
 $user = Auth::requireApi();
 $employee_id = $user['employee_id'];
@@ -57,8 +58,27 @@ $clock_out = new DateTime($waktu_sekarang);
 $diff = $clock_in->diff($clock_out);
 $total_jam = $diff->h + ($diff->i / 60);
 
-$update = $pdo->prepare("UPDATE attendances SET clock_out = ?, total_work = ? WHERE id = ?");
-$update->execute([$waktu_sekarang, $total_jam, $absen['id']]);
+$selfie = AttendanceService::storeSelfie(
+    isset($data['selfie']) ? $data['selfie'] : null,
+    $tanggal,
+    $employee_id,
+    'selfie_out'
+);
+
+$updates = array('clock_out = ?', 'total_work = ?');
+$values = array($waktu_sekarang, $total_jam);
+if ($selfie) {
+    foreach (array('selfie_out_path' => $selfie['path'], 'selfie_out_mime_type' => $selfie['mime_type']) as $column => $value) {
+        $check = $pdo->query("SHOW COLUMNS FROM attendances LIKE '" . $column . "'");
+        if ($check && $check->fetch()) {
+            $updates[] = $column . ' = ?';
+            $values[] = $value;
+        }
+    }
+}
+$values[] = $absen['id'];
+$update = $pdo->prepare("UPDATE attendances SET " . implode(', ', $updates) . " WHERE id = ?");
+$update->execute($values);
 
 Json::out(array(
     'success' => true,
@@ -67,5 +87,6 @@ Json::out(array(
         'total_jam_kerja' => round($total_jam, 2) . ' jam',
         'latitude' => $lat,
         'longitude' => $lng,
+        'selfie_out_url' => $selfie ? 'selfie.php?id=' . (int)$absen['id'] . '&type=out' : null,
     ),
 ));

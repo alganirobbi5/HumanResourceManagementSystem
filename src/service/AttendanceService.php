@@ -12,6 +12,40 @@ class AttendanceService
         $this->db = $db ?: new DBConnection();
     }
 
+    public static function storeSelfie($selfie, $tanggal, $employeeId, $prefix)
+    {
+        if (!is_string($selfie) ||
+            preg_match('#^data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=\r\n]+)$#', $selfie, $m) !== 1) {
+            return null;
+        }
+
+        $mime = strtolower($m[1]);
+        if (!in_array($mime, Config::ALLOWED_SELFIE_MIME, true)) {
+            return null;
+        }
+        $bytes = base64_decode($m[2], true);
+        if ($bytes === false || strlen($bytes) > Config::MAX_SELFIE_BYTES) {
+            return null;
+        }
+
+        $extMap = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
+        $relativeDir = $tanggal . '/' . (int)$employeeId;
+        $absoluteDir = rtrim(Config::SELFIE_STORAGE_DIR, '/\\') . '/' .
+            str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
+        if ((!is_dir($absoluteDir) && !mkdir($absoluteDir, 0755, true)) || !is_dir($absoluteDir)) {
+            return null;
+        }
+
+        $filename = $prefix . '_' . uniqid('', true) . '.' . $extMap[$mime];
+        $absolutePath = $absoluteDir . DIRECTORY_SEPARATOR . $filename;
+        if (file_put_contents($absolutePath, $bytes) === false) {
+            return null;
+        }
+        @chmod($absolutePath, 0644);
+
+        return array('path' => $relativeDir . '/' . $filename, 'mime_type' => $mime);
+    }
+
     /**
      * Simpan absensi karyawan. Identitas diambil dari parameter server-side,
      * bukan dari input frontend.
@@ -104,7 +138,7 @@ class AttendanceService
         );
         $rows = $this->db->selectAll(
             'SELECT a.id, a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude,
-                    a.status, a.selfie_path, a.created_at,
+                    a.status, a.created_at' . $this->optionalAttendanceColumns() . ',
                     e.first_name, e.last_name
              FROM attendances a
              LEFT JOIN employees e ON e.id = a.employee_id
@@ -158,7 +192,7 @@ class AttendanceService
 
         $rows = $this->db->selectAll(
             'SELECT a.id, a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude,
-                    a.gps_accuracy, a.status, a.selfie_path, a.selfie_mime_type, a.selfie_size, a.created_at,
+                    a.gps_accuracy, a.status, a.created_at' . $this->optionalAttendanceColumns() . ',
                     e.first_name, e.last_name, e.user_name AS employee_nik,
                     d.name AS department_name, dg.title AS designation_name
              FROM attendances a
@@ -177,6 +211,18 @@ class AttendanceService
             'page' => $page,
             'per_page' => $perPage
         );
+    }
+
+    private function optionalAttendanceColumns()
+    {
+        $columns = '';
+        foreach (array('selfie_path', 'selfie_mime_type', 'selfie_size', 'selfie_out_path', 'selfie_out_mime_type') as $column) {
+            $exists = $this->db->selectOne("SHOW COLUMNS FROM attendances LIKE '" . $column . "'");
+            if ($exists) {
+                $columns .= ', a.' . $column;
+            }
+        }
+        return $columns;
     }
 
     /** Data untuk export: diambil dari database sesuai rentang tanggal. */

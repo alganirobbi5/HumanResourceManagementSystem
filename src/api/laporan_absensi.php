@@ -34,9 +34,11 @@ try {
     // Ambil data absensi (Join dengan tabel employees untuk dapat nama)
     $selfieColumn = '';
     try {
-        $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'selfie_path'");
-        if ($col && $col->fetch()) {
-            $selfieColumn = ', a.selfie_path';
+        foreach (array('selfie_path', 'selfie_out_path') as $column) {
+            $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE '" . $column . "'");
+            if ($col && $col->fetch()) {
+                $selfieColumn .= ', a.' . $column;
+            }
         }
     } catch (PDOException $e) {
         $selfieColumn = '';
@@ -59,6 +61,7 @@ try {
               FROM attendances a
               LEFT JOIN employees e ON a.employee_id = e.id ";
     $conditions = array();
+    $params = array();
     if ($whereDeleted !== '') $conditions[] = $whereDeleted;
     if ($tanggal !== '') {
         $conditions[] = "a.date = ?";
@@ -72,6 +75,11 @@ try {
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($data as &$row) {
+        $row['selfie_in_url'] = !empty($row['selfie_path']) ? 'selfie.php?id=' . (int)$row['id'] . '&type=in' : null;
+        $row['selfie_out_url'] = !empty($row['selfie_out_path']) ? 'selfie.php?id=' . (int)$row['id'] . '&type=out' : null;
+    }
+    unset($row);
 
     // Envelope lama dipertahankan selama masa transisi Flutter.
     http_response_code(200);
