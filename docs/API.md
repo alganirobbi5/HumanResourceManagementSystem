@@ -198,4 +198,4 @@ endpoint ini. Migrasi menambah `users.admin_id` (UNIQUE) dan tabel `admin_attend
 mysql -uroot hrm < DB/hrm_prd_migration.sql
 ```
 
-Akun seed: `budi` / `password123` (karyawan) dan `siti` / `password123` (HR) — ganti password di produksi.
+Tidak ada akun seed bawaan. Buat akun produksi melalui admin/system administrator.

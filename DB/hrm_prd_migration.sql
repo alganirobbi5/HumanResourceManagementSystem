@@ -120,40 +120,6 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------------
--- 7. Seed awal (akun awal — GANTI password setelah masuk produksi)
---    Employee 1 : karyawan biasa
---    Employee 2 : HR / atasan
---    password untuk keduanya: password123
+-- 7. Seed awal dinonaktifkan: akun dummy (budi, siti, razu) tidak lagi
+--    dibuat otomatis. Gunakan akun produksi yang sudah ada (mis. hilman).
 -- ---------------------------------------------------------------------
-INSERT INTO `employee_designations` (`id`, `title`, `status`, `created_by`, `create_date`)
-VALUES (3, 'Administrator', 1, 'system', NOW())
-ON DUPLICATE KEY UPDATE `title` = VALUES(`title`), `status` = 1;
-
-INSERT INTO `employees`
-  (`id`, `first_name`, `last_name`, `user_name`, `password`, `gender`, `email`, `department_id`, `designation_id`, `mobile_no`, `status`, `create_by`, `created_date`)
-VALUES
-  (1, 'Budi', 'Santoso', 'budi', 'password123', 'Male', 'budi@company.test', 1, 2, '081200000001', 1, 'system', NOW()),
-  (2, 'Siti', 'HR', 'siti', 'password123', 'Female', 'siti@company.test', 1, 1, '081200000002', 1, 'system', NOW()),
-  (3, 'Razu', '', 'razu', 'razu123', 'Male', 'razu@company.test', 1, 3, '081200000003', 1, 'system', NOW())
-ON DUPLICATE KEY UPDATE `first_name` = VALUES(`first_name`);
-
-INSERT INTO `users` (`username`, `email`, `password_hash`, `role`, `employee_id`, `is_active`)
-VALUES
-  ('budi', 'budi@company.test', '$2y$10$5uvXRfdZF10.2NifEuDM7uGN2USvzpppXsV3QtF9lIpsGqj4wWmyq', 'employee', 1, 1),
-  ('siti', 'siti@company.test', '$2y$10$5uvXRfdZF10.2NifEuDM7uGN2USvzpppXsV3QtF9lIpsGqj4wWmyq', 'hr', 2, 1)
-ON DUPLICATE KEY UPDATE `role` = VALUES(`role`);
-
--- Hubungkan akun lama (tabel admins, mis. 'razu') ke profil karyawan bila NIK-nya sama.
-UPDATE `users` u
-JOIN `employees` e ON e.`user_name` = u.`username`
-SET u.`employee_id` = e.`id`
-WHERE u.`employee_id` IS NULL;
-
-INSERT INTO `leave_balances` (`employee_id`, `leave_type`, `entitlement_year`, `entitled_days`, `used_days`)
-SELECT e.id, 'annual', YEAR(CURDATE()), 12, 0
-FROM employees e
-WHERE e.id IN (1, 2, 3)
-  AND NOT EXISTS (
-    SELECT 1 FROM leave_balances lb
-    WHERE lb.employee_id = e.id AND lb.leave_type = 'annual' AND lb.entitlement_year = YEAR(CURDATE())
-  );

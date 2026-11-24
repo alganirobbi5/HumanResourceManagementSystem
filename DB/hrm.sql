@@ -39,8 +39,7 @@ CREATE TABLE `admins` (
 -- Dumping data for table `admins`
 --
 
-INSERT INTO `admins` (`id`, `name`, `password`, `created_at`, `modified_at`, `deleted_at`) VALUES
-(1, 'razu', '123', '2017-05-24 04:44:03', '0000-00-00 00:00:00', NULL);
+-- Akun admin lama (razu) sengaja tidak disertakan; gunakan akun produksi.
 
 -- --------------------------------------------------------
 
