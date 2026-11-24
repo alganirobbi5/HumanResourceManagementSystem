@@ -41,14 +41,25 @@ $fields = "id, employee_id, type, leave_from, leave_to, status, FROM_UNIXTIME(cr
 if ($hasReason) $fields .= ", reason";
 if ($hasComment) $fields .= ", comment";
 
+// Sembunyikan data yang sudah dihapus HR (soft-delete).
+$hasDeletedAt = false;
+try {
+    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'deleted_at'");
+    $hasDeletedAt = $col && $col->fetch() !== false;
+} catch (PDOException $e) {
+    $hasDeletedAt = false;
+}
+$filter = $hasDeletedAt ? " WHERE deleted_at IS NULL" : "";
+
 // Admin HR tidak memiliki employee_id: tampilkan seluruh pengajuan.
 // Karyawan tetap hanya melihat riwayat miliknya (employee_id dari token/session).
 if ($lihatSemua) {
-    $stmt = $pdo->query("SELECT $fields FROM leaves ORDER BY id DESC");
+    $stmt = $pdo->query("SELECT $fields FROM leaves $filter ORDER BY id DESC");
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $message = 'Riwayat cuti seluruh karyawan';
 } else {
-    $stmt = $pdo->prepare("SELECT $fields FROM leaves WHERE employee_id = ? ORDER BY id DESC");
+    $filter .= $hasDeletedAt ? " AND employee_id = ?" : " WHERE employee_id = ?";
+    $stmt = $pdo->prepare("SELECT $fields FROM leaves $filter ORDER BY id DESC");
     $stmt->execute([$employee_id]);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $message = 'Riwayat cuti berhasil diambil';
