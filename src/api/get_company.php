@@ -10,11 +10,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Json.php';
 
 try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $stmt = $pdo->query("SELECT nama_perusahaan, kode_perusahaan FROM company_profile LIMIT 1");
+
+    $check = $pdo->query("SHOW TABLES LIKE 'company_profile'");
+    if (!$check || !$check->fetch()) {
+        $pdo->exec("CREATE TABLE company_profile (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            nama_perusahaan VARCHAR(150) NOT NULL,
+            kode_perusahaan VARCHAR(50) NOT NULL,
+            PRIMARY KEY (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
+
+    $stmt = $pdo->query("SELECT nama_perusahaan, kode_perusahaan FROM company_profile ORDER BY id LIMIT 1");
     $data = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!is_array($data)) {
         $data = array(
@@ -22,8 +34,7 @@ try {
             'kode_perusahaan' => 'CMJ-2026',
         );
     }
-    echo json_encode(array("status" => "success", "data" => $data));
+    Json::ok('OK', array('data' => $data));
 } catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode(array("status" => "error", "message" => $e->getMessage()));
+    Json::error('Gagal memuat profil perusahaan', 500);
 }
