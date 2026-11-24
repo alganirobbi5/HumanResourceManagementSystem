@@ -32,7 +32,7 @@ Status HTTP: `200` OK, `401` belum login, `403` tidak berizin, `422` validasi, `
 |---|---|---|
 | GET | `/src/api/attendances.php?scope=me&page=1` | Riwayat absensi milik karyawan login |
 | GET | `/src/api/attendances.php?scope=all&date=&start_date=&end_date=&keyword=&page=` | Daftar absensi (khusus role `hr`) |
-| POST | `/src/api/attendances.php` | Kirim absensi (multipart form-data) |
+| POST | `/src/api/attendances.php` | Kirim absensi (JSON) |
 
 Field POST absensi:
 
@@ -42,14 +42,16 @@ Field POST absensi:
 | `longitude` | wajib, desimal |
 | `gps_accuracy` | opsional (meter) |
 | `request_id` | opsional, pencegah duplikasi |
-| `selfie` | file gambar (jpg/png/webp, maks 2 MB) |
+
+Foto selfie tidak dikirim ke server dan disimpan permanen di penyimpanan privat aplikasi HP.
+Server hanya menerima koordinat, akurasi GPS, dan waktu.
 
 Tanggal & waktu resmi dibuat oleh server (timezone perusahaan di `src/common/Config.php`).
 Identitas karyawan diambil dari sesi/token, bukan dari input client.
 
 | Method | Endpoint | Fungsi |
 |---|---|---|
-| GET | `/src/api/selfie.php?id={attendance_id}` | Foto selfie (pemilik atau HR) |
+| GET | `/src/api/selfie.php?id={attendance_id}` | Foto selfie historis (pemilik atau HR) |
 
 ## Cuti
 
@@ -118,31 +120,33 @@ Response mengikuti envelope standar `{ success, message, data }`.
 | Method | Endpoint | Fungsi |
 |---|---|---|
 | GET | `/src/api/status_absen_admin.php` | Status absensi admin yang login. Opsional `?date=YYYY-MM-DD` |
-| POST | `/src/api/absen_admin.php` | Absen masuk (multipart/form-data) |
-| POST | `/src/api/absen_pulang_admin.php` | Absen pulang (multipart/form-data) |
+| POST | `/src/api/absen_admin.php` | Absen masuk (JSON) |
+| POST | `/src/api/absen_pulang_admin.php` | Absen pulang (JSON) |
 
-Field multipart (absen masuk dan pulang):
+Field JSON (absen masuk dan pulang):
 
 | Field | Wajib | Keterangan |
 |---|---|---|
 | `latitude` | ya | desimal, rentang -90..90 |
 | `longitude` | ya | desimal, rentang -180..180 |
 | `waktu_lokal` | ya (pulang) | `YYYY-MM-DD HH:MM:SS` |
-| `selfie` | ya | file gambar JPG/PNG/WebP, maks 2 MB, nama file unik, disimpan privat |
 
 Field opsional absen masuk: `gps_accuracy`, `request_id`.
+Foto selfie disimpan lokal di HP dan tidak dikirim ke server.
 
-Contoh request (Flutter, multipart):
+Contoh request (Flutter, JSON):
 
 ```dart
 final uri = Uri.parse('${ApiConfig.baseUrl}/absen_admin.php');
-final request = http.MultipartRequest('POST', uri)
-  ..headers['Authorization'] = 'Bearer $token'
-  ..fields['latitude'] = latitude.toString()
-  ..fields['longitude'] = longitude.toString()
-  ..fields['gps_accuracy'] = accuracy.toString()
-  ..files.add(await http.MultipartFile.fromPath('selfie', photo.path));
-final response = await request.send();
+final response = await http.post(
+  uri,
+  headers: ApiConfig.authHeaders(token),
+  body: jsonEncode(<String, dynamic>{
+    'latitude': latitude.toString(),
+    'longitude': longitude.toString(),
+    'gps_accuracy': accuracy.toStringAsFixed(2),
+  }),
+);
 ```
 
 Response sukses (check-in / check-out):
@@ -183,10 +187,10 @@ Error:
 |---|---|
 | `401` | token tidak ada / invalid |
 | `403` | bukan role HR atau tidak punya relasi `admin_id` |
-| `422` | koordinat di luar rentang, di luar geofence, selfie bukan JPG/PNG/WebP, atau > 2 MB |
+| `422` | koordinat tidak valid, di luar rentang, atau di luar geofence |
 | `409` | sudah check-in / check-out pada tanggal tersebut |
 | `429` | terlalu sering mengirim absensi |
-| `500` | gagal menyimpan (transaksi digulung, file selfie dihapus) |
+| `500` | gagal menyimpan (transaksi digulung) |
 
 Catatan migrasi: jalankan `DB/migrations/20261120_admin_api_identity.sql` sebelum memakai
 endpoint ini. Migrasi menambah `users.admin_id` (UNIQUE) dan tabel `admin_attendances`

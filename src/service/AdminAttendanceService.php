@@ -39,9 +39,8 @@ class AdminAttendanceService
     /**
      * Check-in Admin HR.
      * Identitas berasal dari token (adminId), bukan dari request.
-     * File selfie dikirim sebagai multipart/form-data (field: selfie).
      */
-    public function checkIn($adminId, $latitude, $longitude, $gpsAccuracy, array $file, $requestId = null)
+    public function checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId = null)
     {
         if (!$adminId) {
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
@@ -50,11 +49,9 @@ class AdminAttendanceService
         $latitude = $this->validateCoordinate($latitude, -90, 90, 'latitude');
         $longitude = $this->validateCoordinate($longitude, -180, 180, 'longitude');
         $this->assertInsideOffice($latitude, $longitude);
-        $selfie = $this->validateUploadedSelfie($file);
 
         $tanggal = Config::companyToday();
         $now = Config::companyNow();
-        $relativePath = null;
 
         $this->db->beginTransaction();
         try {
@@ -68,38 +65,26 @@ class AdminAttendanceService
                 throw new RuntimeException('Anda sudah melakukan absen masuk hari ini');
             }
 
-            $relativePath = $this->storeUploadedSelfie($selfie['tmp_name'], $selfie['ext'], $tanggal, $adminId);
-
             $this->db->run(
                 'INSERT INTO admin_attendances
                     (admin_id, tanggal, waktu_masuk, latitude_masuk, longitude_masuk,
-                     selfie_masuk, selfie_masuk_mime, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                     created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)',
                 array(
                     (int)$adminId,
                     $tanggal,
                     $now->format('H:i:s'),
                     $latitude,
                     $longitude,
-                    $relativePath,
-                    $selfie['mime'],
                     $now->format('Y-m-d H:i:s'),
                     $now->format('Y-m-d H:i:s'),
                 )
             );
 
             $this->db->commit();
-        } catch (RuntimeException $e) {
-            if ($relativePath !== null) {
-                @unlink($this->absolutePath($relativePath));
-            }
-            throw $e;
         } catch (Exception $e) {
             if ($this->db->getPdo()->inTransaction()) {
                 $this->db->rollBack();
-            }
-            if ($relativePath !== null) {
-                @unlink($this->absolutePath($relativePath));
             }
             if ($this->isDuplicateKeyError($e)) {
                 throw new RuntimeException('Anda sudah melakukan absen masuk hari ini');
@@ -112,9 +97,8 @@ class AdminAttendanceService
 
     /**
      * Check-out Admin HR.
-     * Selfie juga dikirim sebagai multipart/form-data (field: selfie).
      */
-    public function checkOut($adminId, $waktuLokal, $latitude, $longitude, array $file)
+    public function checkOut($adminId, $waktuLokal, $latitude, $longitude)
     {
         if (!$adminId) {
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
@@ -130,9 +114,6 @@ class AdminAttendanceService
         $latitude = $this->validateCoordinate($latitude, -90, 90, 'latitude');
         $longitude = $this->validateCoordinate($longitude, -180, 180, 'longitude');
         $this->assertInsideOffice($latitude, $longitude);
-        $selfie = $this->validateUploadedSelfie($file);
-
-        $relativePath = null;
 
         $this->db->beginTransaction();
         try {
@@ -149,19 +130,15 @@ class AdminAttendanceService
                 throw new RuntimeException('Anda sudah absen pulang hari ini');
             }
 
-            $relativePath = $this->storeUploadedSelfie($selfie['tmp_name'], $selfie['ext'], $tanggal, $adminId);
-
             $stmt = $this->db->run(
                 'UPDATE admin_attendances
-                 SET waktu_pulang = ?, latitude_pulang = ?, longitude_pulang = ?,
-                     selfie_pulang = ?, selfie_pulang_mime = ?, updated_at = ?
-                 WHERE id = ? AND admin_id = ? AND waktu_pulang IS NULL',
+                  SET waktu_pulang = ?, latitude_pulang = ?, longitude_pulang = ?,
+                      updated_at = ?
+                  WHERE id = ? AND admin_id = ? AND waktu_pulang IS NULL',
                 array(
                     $waktu,
                     $latitude,
                     $longitude,
-                    $relativePath,
-                    $selfie['mime'],
                     Config::companyNow()->format('Y-m-d H:i:s'),
                     (int)$row['id'],
                     (int)$adminId,
@@ -169,22 +146,13 @@ class AdminAttendanceService
             );
             if ($stmt->rowCount() === 0) {
                 $this->db->rollBack();
-                @unlink($this->absolutePath($relativePath));
                 throw new RuntimeException('Anda sudah absen pulang hari ini');
             }
 
             $this->db->commit();
-        } catch (RuntimeException $e) {
-            if ($relativePath !== null && !$this->db->getPdo()->inTransaction()) {
-                @unlink($this->absolutePath($relativePath));
-            }
-            throw $e;
         } catch (Exception $e) {
             if ($this->db->getPdo()->inTransaction()) {
                 $this->db->rollBack();
-            }
-            if ($relativePath !== null) {
-                @unlink($this->absolutePath($relativePath));
             }
             throw $e;
         }
@@ -227,74 +195,9 @@ class AdminAttendanceService
         throw new InvalidArgumentException('Anda berada di luar area absensi yang diizinkan');
     }
 
-    private function validateUploadedSelfie(array $file)
-    {
-        if (!isset($file['error']) || $file['error'] === UPLOAD_ERR_NO_FILE) {
-            throw new InvalidArgumentException('Foto selfie belum dipilih');
-        }
-        if ($file['error'] !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('Upload foto gagal, silakan coba lagi');
-        }
-        if (!is_uploaded_file($file['tmp_name'])) {
-            throw new RuntimeException('File selfie tidak valid');
-        }
-        if (!isset($file['size']) || $file['size'] > Config::MAX_SELFIE_BYTES) {
-            throw new InvalidArgumentException('Ukuran foto melebihi batas maksimal 2 MB');
-        }
-
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $mime = $finfo->file($file['tmp_name']);
-        if (!in_array($mime, Config::ALLOWED_SELFIE_MIME, true)) {
-            throw new InvalidArgumentException('Tipe file foto tidak diizinkan (gunakan JPG, PNG, atau WebP)');
-        }
-
-        return array(
-            'tmp_name' => $file['tmp_name'],
-            'mime' => $mime,
-            'ext' => $this->extensionForMime($mime),
-        );
-    }
-
-    private function extensionForMime($mime)
-    {
-        $map = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
-        if (!isset($map[$mime])) {
-            throw new InvalidArgumentException('Tipe file selfie tidak diizinkan');
-        }
-        return $map[$mime];
-    }
-
     private function isDuplicateKeyError(Exception $e)
     {
         return $e instanceof PDOException && $e->getCode() === '23000';
     }
 
-    private function storeUploadedSelfie($tmpName, $ext, $tanggal, $adminId)
-    {
-        $dir = $this->ensureDirectory($tanggal, $adminId);
-        $filename = uniqid('admin_selfie_', true) . '.' . $ext;
-        $absolute = $dir . DIRECTORY_SEPARATOR . $filename;
-        if (!move_uploaded_file($tmpName, $absolute)) {
-            throw new RuntimeException('Gagal menyimpan selfie');
-        }
-        @chmod($absolute, 0644);
-        return $tanggal . '/' . (int)$adminId . '/' . $filename;
-    }
-
-    private function ensureDirectory($tanggal, $adminId)
-    {
-        $relative = $tanggal . '/' . (int)$adminId;
-        $absolute = $this->absolutePath($relative);
-        if (!is_dir($absolute) && !mkdir($absolute, 0755, true) && !is_dir($absolute)) {
-            throw new RuntimeException('Gagal membuat direktori selfie');
-        }
-        return $absolute;
-    }
-
-    private function absolutePath($relative)
-    {
-        $base = rtrim(Config::SELFIE_STORAGE_DIR, '/\\');
-        $safe = str_replace(array('/', '\\'), DIRECTORY_SEPARATOR, $relative);
-        return $base . DIRECTORY_SEPARATOR . $safe;
-    }
 }

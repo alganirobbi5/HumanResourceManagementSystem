@@ -32,9 +32,8 @@ class Json
     }
 
     /**
-     * Baca field request dari JSON maupun multipart/form-data.
-     * Flutter mengirim absen lewat multipart, jadi $_POST harus tetap
-     * terbaca walaupun php://input tidak berisi JSON.
+     * Baca field request dari JSON maupun form-encoded.
+     * Klien lama masih mengirim form, klien terbaru mengirim JSON.
      */
     public static function readRequest()
     {

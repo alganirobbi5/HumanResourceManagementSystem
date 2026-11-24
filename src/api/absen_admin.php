@@ -23,15 +23,15 @@ if (!RateLimiter::allow('attendance_admin', Config::RATE_LIMIT_ATTENDANCE_SECOND
     Json::error('Terlalu sering mengirim absensi, tunggu beberapa saat', 429);
 }
 
-$latitude = isset($_POST['latitude']) ? $_POST['latitude'] : null;
-$longitude = isset($_POST['longitude']) ? $_POST['longitude'] : null;
-$gpsAccuracy = isset($_POST['gps_accuracy']) ? $_POST['gps_accuracy'] : null;
-$requestId = isset($_POST['request_id']) ? preg_replace('/[^a-zA-Z0-9\-_]/', '', (string)$_POST['request_id']) : null;
-$file = isset($_FILES['selfie']) ? $_FILES['selfie'] : array('error' => UPLOAD_ERR_NO_FILE);
+$data = Json::readRequest();
+$latitude = isset($data['latitude']) ? $data['latitude'] : null;
+$longitude = isset($data['longitude']) ? $data['longitude'] : null;
+$gpsAccuracy = isset($data['gps_accuracy']) ? $data['gps_accuracy'] : null;
+$requestId = isset($data['request_id']) ? preg_replace('/[^a-zA-Z0-9\-_]/', '', (string)$data['request_id']) : null;
 
 try {
     $service = new AdminAttendanceService();
-    $status = $service->checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $file, $requestId);
+    $status = $service->checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId);
     http_response_code(201);
     echo json_encode([
         'success' => true,

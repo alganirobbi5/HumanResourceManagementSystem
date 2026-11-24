@@ -34,13 +34,8 @@ if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
     Json::error('Koordinat GPS berada di luar rentang yang valid', 422);
 }
 
-$waktu_lokal = isset($data['waktu_lokal']) ? trim((string)$data['waktu_lokal']) : '';
-if ($waktu_lokal === '') {
-    Json::error('waktu_lokal wajib diisi', 400);
-}
-
-$tanggal = date('Y-m-d', strtotime($waktu_lokal));
-$waktu_sekarang = date('H:i:s', strtotime($waktu_lokal));
+$tanggal = Config::companyToday();
+$waktu_sekarang = Config::companyNow()->format('H:i:s');
 
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -55,42 +50,6 @@ if (!$absen) {
 
 if ($absen['clock_out'] && $absen['clock_out'] !== '00:00:00') {
     Json::error('Anda sudah absen pulang hari ini.', 400);
-}
-
-$selfiePath = null;
-if (isset($_FILES['selfie']) && $_FILES['selfie']['error'] !== UPLOAD_ERR_NO_FILE) {
-    $file = $_FILES['selfie'];
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        Json::error('Upload foto gagal, silakan coba lagi', 400);
-    }
-    if (!is_uploaded_file($file['tmp_name'])) {
-        Json::error('File selfie tidak valid', 400);
-    }
-    if ($file['size'] > Config::MAX_SELFIE_BYTES) {
-        Json::error('Ukuran foto melebihi batas maksimal 2 MB', 422);
-    }
-
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime = $finfo->file($file['tmp_name']);
-    if (!in_array($mime, Config::ALLOWED_SELFIE_MIME, true)) {
-        Json::error('Tipe file foto tidak diizinkan (gunakan JPG, PNG, atau WebP)', 422);
-    }
-    $extMap = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
-    $ext = $extMap[$mime];
-
-    $relativeDir = $tanggal . '/' . $employee_id;
-    $absoluteDir = rtrim(Config::SELFIE_STORAGE_DIR, '/\\') . '/' .
-        str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
-    if (!is_dir($absoluteDir) && !mkdir($absoluteDir, 0755, true) && !is_dir($absoluteDir)) {
-        Json::error('Gagal menyiapkan penyimpanan foto selfie', 500);
-    }
-    $filename = 'selfie_pulang_' . uniqid('', true) . '.' . $ext;
-    $absolutePath = $absoluteDir . DIRECTORY_SEPARATOR . $filename;
-    if (!move_uploaded_file($file['tmp_name'], $absolutePath)) {
-        Json::error('Gagal menyimpan foto selfie, silakan coba lagi', 500);
-    }
-    @chmod($absolutePath, 0644);
-    $selfiePath = $relativeDir . '/' . $filename;
 }
 
 $clock_in = new DateTime($absen['clock_in']);
@@ -108,6 +67,5 @@ Json::out(array(
         'total_jam_kerja' => round($total_jam, 2) . ' jam',
         'latitude' => $lat,
         'longitude' => $lng,
-        'selfie_path' => $selfiePath,
     ),
 ));

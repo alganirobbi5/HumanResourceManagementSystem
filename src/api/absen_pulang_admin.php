@@ -18,11 +18,10 @@ require_once __DIR__ . '/../service/AdminAttendanceService.php';
 $user = Auth::requireApiAdmin();
 $adminId = Auth::adminId();
 
-// Kontrak sama dengan absen masuk: multipart/form-data.
-$waktuLokal = isset($_POST['waktu_lokal']) ? $_POST['waktu_lokal'] : null;
-$latitude = isset($_POST['latitude']) ? $_POST['latitude'] : null;
-$longitude = isset($_POST['longitude']) ? $_POST['longitude'] : null;
-$file = isset($_FILES['selfie']) ? $_FILES['selfie'] : array('error' => UPLOAD_ERR_NO_FILE);
+$data = Json::readRequest();
+$waktuLokal = isset($data['waktu_lokal']) ? $data['waktu_lokal'] : null;
+$latitude = isset($data['latitude']) ? $data['latitude'] : null;
+$longitude = isset($data['longitude']) ? $data['longitude'] : null;
 
 if (empty($waktuLokal)) {
     Json::error('waktu_lokal wajib diisi', 400);
@@ -33,7 +32,7 @@ if (!isset($latitude, $longitude)) {
 
 try {
     $service = new AdminAttendanceService();
-    $status = $service->checkOut($adminId, $waktuLokal, $latitude, $longitude, $file);
+    $status = $service->checkOut($adminId, $waktuLokal, $latitude, $longitude);
     Json::ok('Absen pulang Admin HR berhasil disimpan', array('data' => $status));
 } catch (InvalidArgumentException $e) {
     Json::error($e->getMessage(), 422);

@@ -73,45 +73,6 @@ if ($stmtCek->fetch()) {
     Json::error('Anda sudah melakukan absen hari ini.', 400);
 }
 
-if (!isset($_FILES['selfie'])) {
-    Json::error('Foto selfie wajib diisi', 400);
-}
-$file = $_FILES['selfie'];
-if ($file['error'] === UPLOAD_ERR_NO_FILE) {
-    Json::error('Foto selfie wajib diisi', 400);
-}
-if ($file['error'] !== UPLOAD_ERR_OK) {
-    Json::error('Upload foto gagal, silakan coba lagi', 400);
-}
-if (!is_uploaded_file($file['tmp_name'])) {
-    Json::error('File selfie tidak valid', 400);
-}
-if ($file['size'] > Config::MAX_SELFIE_BYTES) {
-    Json::error('Ukuran foto melebihi batas maksimal 2 MB', 422);
-}
-
-$finfo = new finfo(FILEINFO_MIME_TYPE);
-$mime = $finfo->file($file['tmp_name']);
-if (!in_array($mime, Config::ALLOWED_SELFIE_MIME, true)) {
-    Json::error('Tipe file foto tidak diizinkan (gunakan JPG, PNG, atau WebP)', 422);
-}
-$extMap = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
-$ext = $extMap[$mime];
-
-$relativeDir = $tanggal . '/' . $employee_id;
-$absoluteDir = rtrim(Config::SELFIE_STORAGE_DIR, '/\\') . '/' .
-    str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
-if (!is_dir($absoluteDir) && !mkdir($absoluteDir, 0755, true) && !is_dir($absoluteDir)) {
-    Json::error('Gagal menyiapkan penyimpanan foto selfie', 500);
-}
-$filename = 'selfie_' . uniqid('', true) . '.' . $ext;
-$absolutePath = $absoluteDir . DIRECTORY_SEPARATOR . $filename;
-if (!move_uploaded_file($file['tmp_name'], $absolutePath)) {
-    Json::error('Gagal menyimpan foto selfie, silakan coba lagi', 500);
-}
-@chmod($absolutePath, 0644);
-$relativePath = $relativeDir . '/' . $filename;
-
 $columns = array(
     'employee_id', 'date', 'clock_in', 'clock_out', 'total_work',
     'status', 'latitude', 'longitude',
@@ -123,9 +84,6 @@ $values = array(
 $optional = array(
     'gps_accuracy' => isset($data['gps_accuracy']) && is_numeric($data['gps_accuracy'])
         ? (float)$data['gps_accuracy'] : null,
-    'selfie_path' => $relativePath,
-    'selfie_mime_type' => $mime,
-    'selfie_size' => (int)$file['size'],
 );
 foreach ($optional as $column => $value) {
     if ($value === null) {
@@ -144,7 +102,6 @@ $stmt = $pdo->prepare($query);
 $result = $stmt->execute($values);
 
 if (!$result) {
-    @unlink($absolutePath);
     Json::error('Gagal menyimpan absen', 500);
 }
 
@@ -156,6 +113,5 @@ Json::out(array(
         'tanggal' => $tanggal,
         'latitude' => $lat,
         'longitude' => $lng,
-        'selfie_path' => $relativePath,
     ),
 ), 201);

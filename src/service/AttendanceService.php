@@ -16,7 +16,7 @@ class AttendanceService
      * Simpan absensi karyawan. Identitas diambil dari parameter server-side,
      * bukan dari input frontend.
      */
-    public function create($employeeId, $latitude, $longitude, $gpsAccuracy, array $file, $requestId = null)
+    public function create($employeeId, $latitude, $longitude, $gpsAccuracy, $requestId = null)
     {
         if (!$employeeId) {
             throw new InvalidArgumentException('Karyawan tidak valid');
@@ -35,28 +35,6 @@ class AttendanceService
         if ($gpsAccuracy !== null && $gpsAccuracy !== '' && !is_numeric($gpsAccuracy)) {
             $gpsAccuracy = null;
         }
-
-        // Validasi file selfie
-        if (!isset($file['error']) || $file['error'] === UPLOAD_ERR_NO_FILE) {
-            throw new InvalidArgumentException('Foto selfie belum dipilih');
-        }
-        if ($file['error'] !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('Upload foto gagal (kode ' . $file['error'] . '), silakan coba lagi');
-        }
-        if (!is_uploaded_file($file['tmp_name'])) {
-            throw new RuntimeException('File selfie tidak valid');
-        }
-        if ($file['size'] > Config::MAX_SELFIE_BYTES) {
-            throw new InvalidArgumentException('Ukuran foto melebihi batas maksimal ' . round(Config::MAX_SELFIE_BYTES / 1048576, 1) . ' MB');
-        }
-
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $mime = $finfo->file($file['tmp_name']);
-        if (!in_array($mime, Config::ALLOWED_SELFIE_MIME, true)) {
-            throw new InvalidArgumentException('Tipe file foto tidak diizinkan (gunakan JPG, PNG, atau WebP)');
-        }
-        $extMap = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
-        $ext = $extMap[$mime];
 
         $today = Config::companyToday();
         $now = Config::companyNow();
@@ -78,48 +56,24 @@ class AttendanceService
             }
         }
 
-        // Simpan file ke storage privat
-        $relativeDir = $today . '/' . $employeeId;
-        $absoluteDir = rtrim(Config::SELFIE_STORAGE_DIR, '/\\') . '/' . str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
-        if (!is_dir($absoluteDir) && !mkdir($absoluteDir, 0755, true) && !is_dir($absoluteDir)) {
-            throw new RuntimeException('Gagal menyimpan folder foto selfie');
-        }
-        $filename = uniqid('selfie_', true) . '.' . $ext;
-        $absolutePath = $absoluteDir . DIRECTORY_SEPARATOR . $filename;
-        if (!move_uploaded_file($file['tmp_name'], $absolutePath)) {
-            throw new RuntimeException('Gagal menyimpan foto selfie, silakan coba lagi');
-        }
-        @chmod($absolutePath, 0644);
-
-        $relativePath = $relativeDir . '/' . $filename;
-
-        try {
-            $id = $this->db->insert(
-                'INSERT INTO attendances
-                    (employee_id, `date`, clock_in, latitude, longitude, gps_accuracy,
-                     selfie_path, selfie_mime_type, selfie_size, status, request_id, created_at, modified_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                array(
-                    (int)$employeeId,
-                    $today,
-                    $now->format('H:i:s'),
-                    $latitude,
-                    $longitude,
-                    $gpsAccuracy !== null && $gpsAccuracy !== '' ? (float)$gpsAccuracy : null,
-                    $relativePath,
-                    $mime,
-                    (int)$file['size'],
-                    'recorded',
-                    $requestId,
-                    $now->format('Y-m-d H:i:s'),
-                    $now->format('Y-m-d H:i:s')
-                )
-            );
-        } catch (Exception $e) {
-            // Jangan tinggalkan file tanpa record
-            @unlink($absolutePath);
-            throw $e;
-        }
+        $id = $this->db->insert(
+            'INSERT INTO attendances
+                (employee_id, `date`, clock_in, latitude, longitude, gps_accuracy,
+                 status, request_id, created_at, modified_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            array(
+                (int)$employeeId,
+                $today,
+                $now->format('H:i:s'),
+                $latitude,
+                $longitude,
+                $gpsAccuracy !== null && $gpsAccuracy !== '' ? (float)$gpsAccuracy : null,
+                'recorded',
+                $requestId,
+                $now->format('Y-m-d H:i:s'),
+                $now->format('Y-m-d H:i:s')
+            )
+        );
 
         return $this->find($id);
     }
