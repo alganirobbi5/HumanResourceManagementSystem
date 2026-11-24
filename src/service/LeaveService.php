@@ -41,6 +41,37 @@ class LeaveService
         return $row;
     }
 
+    /** Tambah jatah kuota cuti karyawan oleh HR. */
+    public function addEntitlement($employeeId, $days, $year = null)
+    {
+        $employeeId = (int)$employeeId;
+        $days = (float)$days;
+        $year = $year ?: (int)Config::companyNow()->format('Y');
+
+        if ($employeeId <= 0) {
+            throw new InvalidArgumentException('Karyawan wajib dipilih');
+        }
+        if ($days <= 0 || $days > 90) {
+            throw new InvalidArgumentException('Jumlah hari harus antara 0,5 sampai 90');
+        }
+
+        $employee = $this->db->selectOne(
+            'SELECT id, first_name, last_name FROM employees WHERE id = ? AND status = 1',
+            array($employeeId)
+        );
+        if (!$employee) {
+            throw new InvalidArgumentException('Karyawan tidak ditemukan atau tidak aktif');
+        }
+
+        $balance = $this->getBalance($employeeId, $year);
+        $this->db->run(
+            'UPDATE leave_balances SET entitled_days = entitled_days + ?, updated_at = NOW() WHERE id = ?',
+            array($days, (int)$balance['id'])
+        );
+
+        return $this->getBalance($employeeId, $year);
+    }
+
     /**
      * Hitung jumlah hari cuti di sisi server (aturan via Config::LEAVE_DAY_COUNT_RULE).
      */
