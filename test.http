@@ -1,9 +1,246 @@
-POST http://31.97.199.58/HRM/src/api/tambah_lokasi.php
+# ============================================================
+# HRIS Backend API Test - VS Code REST Client
+# ============================================================
+# Tujuan: mendiagnosis HTTP 500 pada login setelah Flutter commit
+#         a9a65c371dc19021e177b25f5343d7267989250b.
+#
+# Cara pakai:
+#   1. Set environment variable HRIS_TEST_USERNAME, HRIS_TEST_PASSWORD,
+#      dan HRIS_TEST_TOKEN sebelum membuka file ini.
+#   2. Salin nilai "data.token" dari response login sukses ke HRIS_TEST_TOKEN
+#      untuk menguji endpoint berautentikasi.
+#   3. Klik "Send Request" pada request yang ingin diuji.
+#
+# Catatan keamanan:
+#   - File ini TIDAK berisi kredensial atau token produksi.
+#   - Semua request bersifat baca-saja ATAU validasi yang pasti ditolak
+#     sebelum data disimpan. Tidak ada DELETE, UPDATE, approval cuti,
+#     maupun operasi lain yang mengubah data produksi.
+#   - Tidak ada employee_id buatan: identitas selalu berasal dari token.
+#   - Request absensi memakai JSON (bukan multipart/selfie).
+# ============================================================
+
+@baseUrl = http://31.97.199.58/HRM/src/api
+@username = {{$processEnv HRIS_TEST_USERNAME}}
+@password = {{$processEnv HRIS_TEST_PASSWORD}}
+@token = {{$processEnv HRIS_TEST_TOKEN}}
+
+
+###
+# 1. Login sukses dengan kredensial dari environment
+# Tujuan : Memastikan login berhasil dan mengembalikan token (diagnosis 500).
+# Metode : POST
+# Endpoint: {{baseUrl}}/login.php
+# Diharapkan: 200 { success: true, data.token, data.user }
+POST {{baseUrl}}/login.php
 Content-Type: application/json
 
 {
-    "nama_lokasi": "Kebun Wo",
-    "latitude": "6.200000",
-    "longitude": "106.816666",
-    "radius_meter": 100
+  "username": "{{test}}",
+  "password": "{{test}}"
+}
+
+###
+# 2. Login tanpa username
+# Tujuan : Menguji penolakan body yang tidak lengkap.
+# Metode : POST
+# Endpoint: {{baseUrl}}/login.php
+# Diharapkan: 400 { success: false, message: "Data tidak lengkap" }
+POST {{baseUrl}}/login.php
+Content-Type: application/json
+
+{
+  "password": "{{test}}"
+}
+
+###
+# 3. Login tanpa password
+# Tujuan : Menguji penolakan body yang tidak lengkap.
+# Metode : POST
+# Endpoint: {{baseUrl}}/login.php
+# Diharapkan: 400 { success: false, message: "Data tidak lengkap" }
+POST {{baseUrl}}/login.php
+Content-Type: application/json
+
+{
+  "username": "{{test}}"
+}
+
+###
+# 4. Login dengan username yang tidak ditemukan
+# Tujuan : Menguji jalur kredensial invalid (bukan kesalahan server).
+# Metode : POST
+# Endpoint: {{baseUrl}}/login.php
+# Diharapkan: 401 { success: false, message: "Username atau password salah" }
+POST {{baseUrl}}/login.php
+Content-Type: application/json
+
+{
+  "username": "__hris_user_tidak_ada__",
+  "password": "{{password}}"
+}
+
+###
+# 5. Login dengan password salah
+# Tujuan : Menguji kegagalan verifikasi password (bukan kesalahan server).
+# Metode : POST
+# Endpoint: {{baseUrl}}/login.php
+# Diharapkan: 401 { success: false, message: "Username atau password salah" }
+POST {{baseUrl}}/login.php
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "__password_salah__"
+}
+
+
+###
+# 6. Identitas akun yang sedang login
+# Tujuan : Memastikan Bearer token diterima dan profil dasar dapat dibaca.
+# Metode : GET
+# Endpoint: {{baseUrl}}/me.php
+# Diharapkan: 200 { success: true, data.id, data.username, data.role, data.display_name }
+GET {{baseUrl}}/me.php
+Authorization: Bearer {{token}}
+
+###
+# 7. Profil akun yang sedang login
+# Tujuan : Menguji profil tanpa mengirim employee_id buatan (diambil dari token).
+# Metode : GET
+# Endpoint: {{baseUrl}}/profil.php
+# Diharapkan: 200 { success: true, data.username, data.nama_lengkap, data.sisa_cuti }
+GET {{baseUrl}}/profil.php
+Authorization: Bearer {{token}}
+
+###
+# 8. Status absensi karyawan hari ini (baca-saja)
+# Tujuan : Memastikan status absensi dapat dibaca tanpa menulis data.
+# Metode : GET
+# Endpoint: {{baseUrl}}/status_absen.php
+# Diharapkan: 200 { success: true, data.sudah_masuk, data.jam_masuk, data.sudah_pulang }
+GET {{baseUrl}}/status_absen.php
+Authorization: Bearer {{token}}
+
+###
+# 9. Status absensi Admin HR (baca-saja)
+# Tujuan : Menguji status absensi Admin HR dari relasi admin_id di token.
+# Catatan: Hanya berhasil untuk Admin HR; akun lain akan ditolak 403.
+# Metode : GET
+# Endpoint: {{baseUrl}}/status_absen_admin.php
+# Diharapkan: 200 { success: true, data.tanggal, data.sudah_masuk, data.sudah_pulang }
+GET {{baseUrl}}/status_absen_admin.php
+Authorization: Bearer {{token}}
+
+###
+# 10. Riwayat cuti (baca-saja)
+# Tujuan : Memastikan riwayat cuti dapat dibaca tanpa mengubah pengajuan.
+# Metode : GET
+# Endpoint: {{baseUrl}}/riwayat_cuti.php
+# Diharapkan: 200 { success: true, data: [ ... ] }
+GET {{baseUrl}}/riwayat_cuti.php
+Authorization: Bearer {{token}}
+
+###
+# 11. Ringkasan cuti bulanan (baca-saja)
+# Tujuan : Menguji ringkasan cuti periode berjalan (default bulan/tahun saat ini).
+# Catatan: Endpoint ini memerlukan role HR; akun karyawan akan ditolak 403.
+# Metode : GET
+# Endpoint: {{baseUrl}}/ringkasan_cuti.php
+# Diharapkan: 200 { success: true, data.total, data.pending, data.approved, data.rejected }
+GET {{baseUrl}}/ringkasan_cuti.php
+Authorization: Bearer {{token}}
+
+###
+# 12. Daftar pengumuman (baca-saja)
+# Tujuan : Memastikan daftar pengumuman dapat dibaca.
+# Catatan: Endpoint bersifat publik; header token tetap disertakan sesuai format pengujian.
+# Metode : GET
+# Endpoint: {{baseUrl}}/pengumuman.php
+# Diharapkan: 200 { success: true, data: [ ... ] }
+GET {{baseUrl}}/pengumuman.php
+Authorization: Bearer {{token}}
+
+###
+# 13. Daftar notifikasi (baca-saja)
+# Tujuan : Memastikan notifikasi dan jumlah yang belum dibaca dapat dibaca.
+# Catatan: Hanya GET; jangan kirim POST mark_read agar tidak mengubah data.
+# Metode : GET
+# Endpoint: {{baseUrl}}/notifications.php
+# Diharapkan: 200 { success: true, data: [ ... ], unread: <angka> }
+GET {{baseUrl}}/notifications.php
+Authorization: Bearer {{token}}
+
+
+###
+# 14. Validasi absen masuk tanpa latitude/longitude
+# Tujuan : Memastikan request ditolak SEBELUM absensi tercatat.
+# Metode : POST
+# Endpoint: {{baseUrl}}/absen.php
+# Diharapkan: 400 { success: false, message: "latitude dan longitude wajib diisi" }
+POST {{baseUrl}}/absen.php
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{}
+
+###
+# 15. Validasi absen masuk dengan koordinat di luar rentang
+# Tujuan : Memastikan koordinat tidak valid ditolak SEBELUM absensi tercatat.
+# Metode : POST
+# Endpoint: {{baseUrl}}/absen.php
+# Diharapkan: 422 { success: false, message: "Koordinat GPS berada di luar rentang yang valid" }
+POST {{baseUrl}}/absen.php
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "latitude": 999,
+  "longitude": 999
+}
+
+###
+# 16. Validasi absen pulang tanpa latitude/longitude
+# Tujuan : Memastikan request ditolak SEBELUM ada pembaruan data absensi.
+# Metode : POST
+# Endpoint: {{baseUrl}}/absen_pulang.php
+# Diharapkan: 400 { success: false, message: "latitude dan longitude wajib diisi" }
+POST {{baseUrl}}/absen_pulang.php
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{}
+
+###
+# 17. Validasi absen masuk Admin HR dengan koordinat di luar rentang
+# Tujuan : Memastikan koordinat tidak valid ditolak SEBELUM transaksi/write dimulai.
+# Catatan: Jika terlalu sering diulang, pembatas laju dapat mengembalikan 429.
+# Metode : POST
+# Endpoint: {{baseUrl}}/absen_admin.php
+# Diharapkan: 422 { success: false, message: "Koordinat latitude di luar rentang" }
+POST {{baseUrl}}/absen_admin.php
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "latitude": 999,
+  "longitude": 999
+}
+
+###
+# 18. Validasi absen pulang Admin HR dengan koordinat di luar rentang
+# Tujuan : Memastikan koordinat tidak valid ditolak SEBELUM transaksi/write dimulai.
+# Catatan: waktu_lokal memakai tanggal lampau dan koordinat sengaja invalid,
+#          sehingga tidak mungkin tercatat sebagai check-out sungguhan.
+# Metode : POST
+# Endpoint: {{baseUrl}}/absen_pulang_admin.php
+# Diharapkan: 422 { success: false, message: "Koordinat latitude di luar rentang" }
+POST {{baseUrl}}/absen_pulang_admin.php
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "waktu_lokal": "2026-01-01 08:00:00",
+  "latitude": 999,
+  "longitude": 999
 }
