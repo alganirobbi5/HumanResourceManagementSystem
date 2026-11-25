@@ -1,7 +1,6 @@
 <?php
 
 require_once __DIR__ . '/../common/DBConnection.php';
-require_once __DIR__ . '/PushNotificationService.php';
 
 class NotificationService
 {
@@ -23,23 +22,6 @@ class NotificationService
             array((int)$userId, $title, $message, $type, $entityType, $entityId !== null ? (int)$entityId : null)
         );
 
-        try {
-            $channel = $type === 'attendance' ? 'attendance_channel' : 'leave_channel';
-            (new PushNotificationService($this->db))->sendToUser(
-                (int)$userId,
-                $title,
-                $message,
-                array(
-                    'notification_id' => (string)$id,
-                    'type' => (string)$type,
-                    'entity_type' => (string)$entityType,
-                    'entity_id' => (string)$entityId,
-                ),
-                $channel
-            );
-        } catch (Exception $e) {
-            error_log('[FCM] push gagal: ' . $e->getMessage());
-        }
         return true;
     }
 
