@@ -7,8 +7,15 @@ header("Access-Control-Allow-Methods: GET");
 
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
+require_once __DIR__ . '/../service/LeaveLeaderService.php';
 
-$user = Auth::requireApiHr();  // Hanya role HR yang boleh
+$user = Auth::requireApi();
+$leaderService = new LeaveLeaderService();
+$isHr = isset($user['role']) && $user['role'] === 'hr';
+$isLeader = $leaderService->isLeader(Auth::userId());
+if (!$isHr && !$isLeader) {
+    Json::error('Anda tidak memiliki izin melihat daftar pengajuan cuti', 403);
+}
 
 $bulan = isset($_GET['bulan']) && $_GET['bulan'] !== '' ? (int)$_GET['bulan'] : null;
 $tahun = isset($_GET['tahun']) && $_GET['tahun'] !== '' ? (int)$_GET['tahun'] : null;
@@ -52,6 +59,28 @@ $extra = '';
 if ($hasReason) $extra .= ", l.reason AS alasan";
 if ($hasComment) $extra .= ", l.comment";
 
+$leaderJoin = '';
+foreach (array('leader_user_id', 'approved_by_user_id', 'approved_by_name', 'catatan_leader', 'decided_at') as $column) {
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE '" . $column . "'");
+        if ($col && $col->fetch() !== false) {
+            $extra .= ', l.' . $column;
+        }
+    } catch (PDOException $e) {
+        // Kolom opsional: abaikan bila belum tersedia.
+    }
+}
+try {
+    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'leader_user_id'");
+    if ($col && $col->fetch() !== false) {
+        $extra .= ', CONCAT_WS(" ", le.first_name, le.last_name) AS target_leader_name';
+        $leaderJoin = ' LEFT JOIN users lu ON lu.id = l.leader_user_id
+                        LEFT JOIN employees le ON le.id = lu.employee_id';
+    }
+} catch (PDOException $e) {
+    $leaderJoin = '';
+}
+
 // Menampilkan seluruh pengajuan cuti dari semua karyawan (khusus role HR)
 $query = "SELECT
             l.id,
@@ -64,6 +93,7 @@ $query = "SELECT
             $extra
           FROM leaves l
           LEFT JOIN employees e ON e.id = l.employee_id
+          $leaderJoin
           $where
           ORDER BY l.id DESC";
 
