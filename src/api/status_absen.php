@@ -53,9 +53,19 @@ try {
     $selfieColumn = '';
 }
 
-// HANYA ABSEN MILIK USER YANG TERLOGIN (dari session)
-// Lewatkan parameter employee_id dari GET untuk keamanan
-$stmt = $pdo->prepare("SELECT id, clock_in, clock_out$selfieColumn FROM attendances WHERE employee_id = ? AND date = ? ORDER BY id DESC LIMIT 1");
+$filterDeleted = '';
+try {
+    $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
+    if ($col && $col->fetch()) {
+        $filterDeleted = ' AND deleted_at IS NULL';
+    }
+} catch (PDOException $e) {
+    $filterDeleted = '';
+}
+
+// HANYA ABSEN MILIK USER YANG TERLOGIN (dari session).
+// Baris yang sudah dihapus HR (soft delete) tidak boleh terbaca lagi.
+$stmt = $pdo->prepare("SELECT id, clock_in, clock_out$selfieColumn FROM attendances WHERE employee_id = ? AND date = ?$filterDeleted ORDER BY id DESC LIMIT 1");
 $stmt->execute([$employee_id, $tanggal]);
 $absen = $stmt->fetch(PDO::FETCH_ASSOC);
 

@@ -12,6 +12,18 @@ class AttendanceService
         $this->db = $db ?: new DBConnection();
     }
 
+    private function deletedFilter($alias = '')
+    {
+        try {
+            $col = $this->db->selectOne("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
+            if ($col) {
+                return ($alias !== '' ? $alias . '.' : '') . 'deleted_at IS NULL';
+            }
+        } catch (Exception $e) {
+        }
+        return null;
+    }
+
     public static function storeSelfie($selfie, $tanggal, $employeeId, $prefix, $scope = '')
     {
         if (!is_string($selfie) ||
@@ -81,8 +93,10 @@ class AttendanceService
             }
         }
         if (Config::ONE_ATTENDANCE_PER_DAY) {
+            $filter = $this->deletedFilter();
             $dup = $this->db->selectOne(
-                'SELECT id FROM attendances WHERE employee_id = ? AND `date` = ? LIMIT 1',
+                'SELECT id FROM attendances WHERE employee_id = ? AND `date` = ?' .
+                ($filter ? ' AND ' . $filter : '') . ' LIMIT 1',
                 array((int)$employeeId, $today)
             );
             if ($dup) {
@@ -114,6 +128,7 @@ class AttendanceService
 
     public function find($id)
     {
+        $filter = $this->deletedFilter('a');
         return $this->db->selectOne(
             'SELECT a.*, e.first_name, e.last_name, e.user_name AS employee_nik,
                     d.name AS department_name, dg.title AS designation_name
@@ -121,7 +136,7 @@ class AttendanceService
              LEFT JOIN employees e ON e.id = a.employee_id
              LEFT JOIN departments d ON d.id = e.department_id
              LEFT JOIN employee_designations dg ON dg.id = e.designation_id
-             WHERE a.id = ?',
+             WHERE a.id = ?' . ($filter ? ' AND ' . $filter : ''),
             array((int)$id)
         );
     }
@@ -132,17 +147,20 @@ class AttendanceService
         $perPage = min(50, max(1, (int)$perPage));
         $offset = ($page - 1) * $perPage;
 
+        $filter = $this->deletedFilter();
+        $where = 'employee_id = ?' . ($filter ? ' AND ' . $filter : '');
         $totalRow = $this->db->selectOne(
-            'SELECT COUNT(id) AS total FROM attendances WHERE employee_id = ?',
+            'SELECT COUNT(id) AS total FROM attendances WHERE ' . $where,
             array((int)$employeeId)
         );
+        $filterAlias = $this->deletedFilter('a');
         $rows = $this->db->selectAll(
             'SELECT a.id, a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude,
                     a.status, a.created_at' . $this->optionalAttendanceColumns() . ',
                     e.first_name, e.last_name
              FROM attendances a
              LEFT JOIN employees e ON e.id = a.employee_id
-             WHERE a.employee_id = ?
+             WHERE a.employee_id = ?' . ($filterAlias ? ' AND ' . $filterAlias : '') . '
              ORDER BY a.`date` DESC, a.clock_in DESC
              LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset,
             array((int)$employeeId)

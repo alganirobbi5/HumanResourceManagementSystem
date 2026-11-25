@@ -61,9 +61,14 @@ if ($scope === 'admin') {
     if ($db->selectOne("SHOW COLUMNS FROM attendances LIKE '" . $mimeColumn . "'")) {
         $mimeSelect = ', ' . $mimeColumn . ' AS selfie_mime_type';
     }
+    $filterDeleted = '';
+    $colDeleted = $db->selectOne("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
+    if ($colDeleted) {
+        $filterDeleted = ' AND deleted_at IS NULL';
+    }
     $row = $db->selectOne(
         'SELECT id, employee_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
-         FROM attendances WHERE id = ?',
+         FROM attendances WHERE id = ?' . $filterDeleted,
         array($id)
     );
     if (!$row || empty($row['selfie_path'])) {
@@ -85,6 +90,6 @@ $mimeType = !empty($row['selfie_mime_type']) ? $row['selfie_mime_type'] : 'image
 header('Content-Type: ' . $mimeType);
 header('Content-Length: ' . filesize($path));
 header('X-Content-Type-Options: nosniff');
-header('Cache-Control: private, max-age=300');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 readfile($path);
 exit;

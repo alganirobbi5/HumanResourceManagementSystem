@@ -227,6 +227,33 @@ class AdminAttendanceService
         throw new InvalidArgumentException('Anda berada di luar area absensi yang diizinkan');
     }
 
+    public function selfiePaths($id)
+    {
+        if (!$id) {
+            return array();
+        }
+        $columns = array('id');
+        foreach (array('selfie_masuk', 'selfie_pulang') as $column) {
+            if ($this->hasColumn($column)) {
+                $columns[] = $column;
+            }
+        }
+        $row = $this->db->selectOne(
+            'SELECT ' . implode(', ', $columns) . ' FROM admin_attendances WHERE id = ? LIMIT 1',
+            array((int)$id)
+        );
+        if (!$row) {
+            return array();
+        }
+        $paths = array();
+        foreach (array('selfie_masuk', 'selfie_pulang') as $column) {
+            if (!empty($row[$column])) {
+                $paths[] = $row[$column];
+            }
+        }
+        return $paths;
+    }
+
     /**
      * Hapus riwayat absensi Admin HR berdasarkan id.
      * Akses sudah dibatasi endpoint untuk role HR.

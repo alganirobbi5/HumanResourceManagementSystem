@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
+require_once __DIR__ . '/../common/Config.php';
 
 // Hanya HR yang boleh menghapus data absensi.
 Auth::requireApiHr();
@@ -34,16 +35,33 @@ try {
     if ($recordType === 'admin') {
         require_once __DIR__ . '/../service/AdminAttendanceService.php';
         $service = new AdminAttendanceService();
+        $paths = $service->selfiePaths($id);
         if (!$service->delete($id)) {
             Json::error('Data absensi HR tidak ditemukan', 404);
         }
+        hapusFileSelfie($paths);
         Json::ok('Data absensi HR berhasil dihapus');
     }
 
-    $stmt = $pdo->prepare("SELECT id FROM attendances WHERE id = ? LIMIT 1");
+    $columns = array('id');
+    foreach (array('selfie_path', 'selfie_out_path') as $column) {
+        $check = $pdo->query("SHOW COLUMNS FROM attendances LIKE '" . $column . "'");
+        if ($check && $check->fetch()) {
+            $columns[] = $column;
+        }
+    }
+    $stmt = $pdo->prepare('SELECT ' . implode(', ', $columns) . ' FROM attendances WHERE id = ? LIMIT 1');
     $stmt->execute(array($id));
-    if (!$stmt->fetch()) {
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
         Json::error('Data absensi tidak ditemukan', 404);
+    }
+
+    $paths = array();
+    foreach (array('selfie_path', 'selfie_out_path') as $column) {
+        if (!empty($row[$column])) {
+            $paths[] = $row[$column];
+        }
     }
 
     $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
@@ -58,9 +76,33 @@ try {
         $stmt->execute(array($id));
     }
 
+    hapusFileSelfie($paths);
     Json::ok('Data absensi berhasil dihapus');
 } catch (PDOException $e) {
     Json::error('Gagal menghapus data absensi', 500);
 } catch (Exception $e) {
     Json::error('Gagal menghapus data absensi', 500);
+}
+
+/**
+ * Hapus file foto selfie dari storage. Path divalidasi agar tidak keluar
+ * dari direktori Config::SELFIE_STORAGE_DIR.
+ */
+function hapusFileSelfie(array $paths)
+{
+    $base = realpath(Config::SELFIE_STORAGE_DIR);
+    if ($base === false) {
+        return;
+    }
+    foreach ($paths as $relative) {
+        $relative = (string)$relative;
+        if ($relative === '') {
+            continue;
+        }
+        $target = realpath(Config::SELFIE_STORAGE_DIR . '/' .
+            str_replace(array('/', '\\'), DIRECTORY_SEPARATOR, $relative));
+        if ($target !== false && strpos($target, $base . DIRECTORY_SEPARATOR) === 0 && is_file($target)) {
+            @unlink($target);
+        }
+    }
 }
