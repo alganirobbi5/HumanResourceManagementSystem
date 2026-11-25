@@ -15,30 +15,64 @@ $type = isset($_GET['type']) ? strtolower(trim((string)$_GET['type'])) : 'in';
 if ($type !== 'in' && $type !== 'out') {
     $type = 'in';
 }
-$pathColumn = $type === 'out' ? 'selfie_out_path' : 'selfie_path';
-$mimeColumn = $type === 'out' ? 'selfie_out_mime_type' : 'selfie_mime_type';
+$scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : 'employee';
+if ($scope !== 'admin') {
+    $scope = 'employee';
+}
 
 $db = new DBConnection();
-if (!$db->selectOne("SHOW COLUMNS FROM attendances LIKE '" . $pathColumn . "'")) {
-    Json::error('Foto absensi tidak ditemukan', 404);
-}
-$mimeSelect = '';
-if ($db->selectOne("SHOW COLUMNS FROM attendances LIKE '" . $mimeColumn . "'")) {
-    $mimeSelect = ', ' . $mimeColumn . ' AS selfie_mime_type';
-}
-$row = $db->selectOne(
-    'SELECT id, employee_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
-     FROM attendances WHERE id = ?',
-    array($id)
-);
-if (!$row || empty($row['selfie_path'])) {
-    Json::error('Foto absensi tidak ditemukan', 404);
-}
 
-// Pemilik atau HR yang berwenang saja
-$isOwner = $row['employee_id'] == $user['employee_id'];
-if (!$isOwner && $user['role'] !== 'hr') {
-    Json::error('Anda tidak berwenang membuka foto ini', 403);
+if ($scope === 'admin') {
+    if (!isset($user['role']) || $user['role'] !== 'hr') {
+        Json::error('Anda tidak berwenang membuka foto ini', 403);
+    }
+    $adminId = Auth::adminId();
+    if ($adminId === null) {
+        Json::error('Identitas Admin HR tidak tersedia', 403);
+    }
+
+    $pathColumn = $type === 'out' ? 'selfie_pulang' : 'selfie_masuk';
+    $mimeColumn = $type === 'out' ? 'selfie_pulang_mime' : 'selfie_masuk_mime';
+    if (!$db->selectOne("SHOW COLUMNS FROM admin_attendances LIKE '" . $pathColumn . "'")) {
+        Json::error('Foto absensi tidak ditemukan', 404);
+    }
+    $mimeSelect = '';
+    if ($db->selectOne("SHOW COLUMNS FROM admin_attendances LIKE '" . $mimeColumn . "'")) {
+        $mimeSelect = ', ' . $mimeColumn . ' AS selfie_mime_type';
+    }
+    $row = $db->selectOne(
+        'SELECT id, admin_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
+         FROM admin_attendances WHERE id = ?',
+        array($id)
+    );
+    if (!$row || empty($row['selfie_path'])) {
+        Json::error('Foto absensi tidak ditemukan', 404);
+    }
+    if ((int)$row['admin_id'] !== (int)$adminId) {
+        Json::error('Anda tidak berwenang membuka foto ini', 403);
+    }
+} else {
+    $pathColumn = $type === 'out' ? 'selfie_out_path' : 'selfie_path';
+    $mimeColumn = $type === 'out' ? 'selfie_out_mime_type' : 'selfie_mime_type';
+    if (!$db->selectOne("SHOW COLUMNS FROM attendances LIKE '" . $pathColumn . "'")) {
+        Json::error('Foto absensi tidak ditemukan', 404);
+    }
+    $mimeSelect = '';
+    if ($db->selectOne("SHOW COLUMNS FROM attendances LIKE '" . $mimeColumn . "'")) {
+        $mimeSelect = ', ' . $mimeColumn . ' AS selfie_mime_type';
+    }
+    $row = $db->selectOne(
+        'SELECT id, employee_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
+         FROM attendances WHERE id = ?',
+        array($id)
+    );
+    if (!$row || empty($row['selfie_path'])) {
+        Json::error('Foto absensi tidak ditemukan', 404);
+    }
+    $isOwner = $row['employee_id'] == $user['employee_id'];
+    if (!$isOwner && $user['role'] !== 'hr') {
+        Json::error('Anda tidak berwenang membuka foto ini', 403);
+    }
 }
 
 $base = realpath(Config::SELFIE_STORAGE_DIR);

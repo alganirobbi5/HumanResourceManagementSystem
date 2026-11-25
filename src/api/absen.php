@@ -19,6 +19,46 @@ if (!$employee_id) {
 
 $data = Json::readRequest();
 
+$isHrAdmin = !$user['employee_id'] && (isset($user['role']) && $user['role'] === 'hr') && Auth::adminId() !== null;
+if ($isHrAdmin) {
+    require_once __DIR__ . '/../service/AdminAttendanceService.php';
+    require_once __DIR__ . '/../service/RateLimiter.php';
+    if (!RateLimiter::allow('attendance_admin', Config::RATE_LIMIT_ATTENDANCE_SECONDS)) {
+        Json::error('Terlalu sering mengirim absensi, tunggu beberapa saat', 429);
+    }
+    $requestId = isset($data['request_id']) ? preg_replace('/[^a-zA-Z0-9\-_]/', '', (string)$data['request_id']) : null;
+    try {
+        $service = new AdminAttendanceService();
+        $status = $service->checkIn(
+            Auth::adminId(),
+            isset($data['latitude']) ? $data['latitude'] : null,
+            isset($data['longitude']) ? $data['longitude'] : null,
+            isset($data['gps_accuracy']) ? $data['gps_accuracy'] : null,
+            $requestId,
+            isset($data['selfie']) ? $data['selfie'] : null
+        );
+        Json::out(array(
+            'success' => true,
+            'message' => 'Absen berhasil disimpan',
+            'data' => array(
+                'id' => $status['id'],
+                'jam_masuk' => $status['jam_masuk'],
+                'tanggal' => $status['tanggal'],
+                'latitude' => isset($data['latitude']) ? (float)$data['latitude'] : null,
+                'longitude' => isset($data['longitude']) ? (float)$data['longitude'] : null,
+                'selfie_in_url' => $status['selfie_in_url'],
+                'selfie_out_url' => null,
+            ),
+        ), 201);
+    } catch (InvalidArgumentException $e) {
+        Json::error($e->getMessage(), 422);
+    } catch (RuntimeException $e) {
+        Json::error($e->getMessage(), 409);
+    } catch (Exception $e) {
+        Json::error('Gagal menyimpan absensi Admin HR', 500);
+    }
+}
+
 if (!isset($data['latitude']) || trim((string)$data['latitude']) === '' ||
     !isset($data['longitude']) || trim((string)$data['longitude']) === '') {
     Json::error('latitude dan longitude wajib diisi', 400);
@@ -114,14 +154,18 @@ $result = $stmt->execute($values);
 if (!$result) {
     Json::error('Gagal menyimpan absen', 500);
 }
+$attendanceId = (int)$pdo->lastInsertId();
 
 Json::out(array(
     'success' => true,
     'message' => 'Absen berhasil disimpan',
     'data' => array(
+        'id' => $attendanceId,
         'jam_masuk' => $waktu_sekarang,
         'tanggal' => $tanggal,
         'latitude' => $lat,
         'longitude' => $lng,
+        'selfie_in_url' => $selfie ? 'selfie.php?id=' . $attendanceId . '&type=in' : null,
+        'selfie_out_url' => null,
     ),
 ), 201);

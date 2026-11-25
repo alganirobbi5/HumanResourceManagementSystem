@@ -28,10 +28,11 @@ $latitude = isset($data['latitude']) ? $data['latitude'] : null;
 $longitude = isset($data['longitude']) ? $data['longitude'] : null;
 $gpsAccuracy = isset($data['gps_accuracy']) ? $data['gps_accuracy'] : null;
 $requestId = isset($data['request_id']) ? preg_replace('/[^a-zA-Z0-9\-_]/', '', (string)$data['request_id']) : null;
+$selfie = isset($data['selfie']) ? $data['selfie'] : null;
 
 try {
     $service = new AdminAttendanceService();
-    $status = $service->checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId);
+    $status = $service->checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId, $selfie);
     http_response_code(201);
     echo json_encode([
         'success' => true,

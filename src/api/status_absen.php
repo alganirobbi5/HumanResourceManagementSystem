@@ -22,12 +22,13 @@ if (!$employee_id) {
             "success" => true,
             "message" => "Status absensi Admin HR",
             "data" => [
+                "id" => $statusAdmin['id'],
                 "sudah_masuk" => (bool)$statusAdmin['sudah_masuk'],
                 "jam_masuk" => $statusAdmin['jam_masuk'],
                 "jam_pulang" => $statusAdmin['jam_pulang'],
                 "sudah_pulang" => (bool)$statusAdmin['sudah_pulang'],
-                "selfie_in_url" => null,
-                "selfie_out_url" => null
+                "selfie_in_url" => $statusAdmin['selfie_in_url'],
+                "selfie_out_url" => $statusAdmin['selfie_out_url']
             ]
         ]);
         exit;
@@ -62,6 +63,7 @@ if ($absen) {
     echo json_encode([
         "success" => true,
         "data" => [
+            "id" => (int)$absen['id'],
             "sudah_masuk" => true,
             "jam_masuk" => $absen['clock_in'],
             "jam_pulang" => ($absen['clock_out'] == '00:00:00' || $absen['clock_out'] == null) ? null : $absen['clock_out'],
@@ -74,6 +76,7 @@ if ($absen) {
     echo json_encode([
         "success" => true,
         "data" => [
+            "id" => null,
             "sudah_masuk" => false,
             "jam_masuk" => null,
             "jam_pulang" => null,

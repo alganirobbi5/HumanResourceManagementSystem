@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../common/Config.php';
+require_once __DIR__ . '/../service/AttendanceService.php';
 
 class AdminAttendanceService
 {
@@ -10,6 +11,11 @@ class AdminAttendanceService
     public function __construct(DBConnection $db = null)
     {
         $this->db = $db ?: new DBConnection();
+    }
+
+    private function hasColumn($column)
+    {
+        return (bool)$this->db->selectOne("SHOW COLUMNS FROM admin_attendances LIKE '" . $column . "'");
     }
 
     public function status($adminId, $tanggal = null)
@@ -22,25 +28,36 @@ class AdminAttendanceService
             throw new InvalidArgumentException('Format tanggal tidak valid');
         }
 
+        $columns = 'id, waktu_masuk, waktu_pulang';
+        if ($this->hasColumn('selfie_masuk')) {
+            $columns .= ', selfie_masuk';
+        }
+        if ($this->hasColumn('selfie_pulang')) {
+            $columns .= ', selfie_pulang';
+        }
         $row = $this->db->selectOne(
-            'SELECT waktu_masuk, waktu_pulang FROM admin_attendances WHERE admin_id = ? AND tanggal = ? LIMIT 1',
+            'SELECT ' . $columns . ' FROM admin_attendances WHERE admin_id = ? AND tanggal = ? LIMIT 1',
             array((int)$adminId, $tanggal)
         );
 
         return array(
+            'id' => $row ? (int)$row['id'] : null,
             'tanggal' => $tanggal,
             'sudah_masuk' => $row && $row['waktu_masuk'] !== null,
             'jam_masuk' => $row ? $row['waktu_masuk'] : null,
             'sudah_pulang' => $row && $row['waktu_pulang'] !== null,
             'jam_pulang' => $row ? $row['waktu_pulang'] : null,
+            'selfie_in_url' => $row && !empty($row['selfie_masuk'])
+                ? 'selfie.php?id=' . (int)$row['id'] . '&type=in&scope=admin' : null,
+            'selfie_out_url' => $row && !empty($row['selfie_pulang'])
+                ? 'selfie.php?id=' . (int)$row['id'] . '&type=out&scope=admin' : null,
         );
     }
 
     /**
-     * Check-in Admin HR.
-     * Identitas berasal dari token (adminId), bukan dari request.
+     * Check-in Admin HR. Identitas berasal dari token (adminId), bukan request.
      */
-    public function checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId = null)
+    public function checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId = null, $selfie = null)
     {
         if (!$adminId) {
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
@@ -52,10 +69,10 @@ class AdminAttendanceService
 
         $tanggal = Config::companyToday();
         $now = Config::companyNow();
+        $selfieData = AttendanceService::storeSelfie($selfie, $tanggal, $adminId, 'selfie_masuk', 'admin');
 
         $this->db->beginTransaction();
         try {
-            // Kunci baris tanggal tersebut agar dua request bersamaan tidak duplikat.
             $existing = $this->db->selectOne(
                 'SELECT id FROM admin_attendances WHERE admin_id = ? AND tanggal = ? FOR UPDATE',
                 array((int)$adminId, $tanggal)
@@ -65,20 +82,29 @@ class AdminAttendanceService
                 throw new RuntimeException('Anda sudah melakukan absen masuk hari ini');
             }
 
+            $columns = array('admin_id', 'tanggal', 'waktu_masuk', 'latitude_masuk', 'longitude_masuk',
+                'created_at', 'updated_at');
+            $values = array(
+                (int)$adminId,
+                $tanggal,
+                $now->format('H:i:s'),
+                $latitude,
+                $longitude,
+                $now->format('Y-m-d H:i:s'),
+                $now->format('Y-m-d H:i:s'),
+            );
+            if ($selfieData && $this->hasColumn('selfie_masuk')) {
+                $columns[] = 'selfie_masuk';
+                $values[] = $selfieData['path'];
+            }
+            if ($selfieData && $this->hasColumn('selfie_masuk_mime')) {
+                $columns[] = 'selfie_masuk_mime';
+                $values[] = $selfieData['mime_type'];
+            }
             $this->db->run(
-                'INSERT INTO admin_attendances
-                    (admin_id, tanggal, waktu_masuk, latitude_masuk, longitude_masuk,
-                     created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)',
-                array(
-                    (int)$adminId,
-                    $tanggal,
-                    $now->format('H:i:s'),
-                    $latitude,
-                    $longitude,
-                    $now->format('Y-m-d H:i:s'),
-                    $now->format('Y-m-d H:i:s'),
-                )
+                'INSERT INTO admin_attendances (' . implode(', ', $columns) . ') VALUES (' .
+                implode(', ', array_fill(0, count($values), '?')) . ')',
+                $values
             );
 
             $this->db->commit();
@@ -98,7 +124,7 @@ class AdminAttendanceService
     /**
      * Check-out Admin HR.
      */
-    public function checkOut($adminId, $waktuLokal, $latitude, $longitude)
+    public function checkOut($adminId, $waktuLokal, $latitude, $longitude, $selfie = null)
     {
         if (!$adminId) {
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
@@ -108,12 +134,15 @@ class AdminAttendanceService
         if (!$timestamp) {
             throw new InvalidArgumentException('Waktu absen pulang tidak valid');
         }
-        $tanggal = date('Y-m-d', $timestamp);
-        $waktu = date('H:i:s', $timestamp);
+        $localTime = new DateTime('@' . $timestamp);
+        $localTime->setTimezone(new DateTimeZone(Config::TIMEZONE));
+        $tanggal = $localTime->format('Y-m-d');
+        $waktu = $localTime->format('H:i:s');
 
         $latitude = $this->validateCoordinate($latitude, -90, 90, 'latitude');
         $longitude = $this->validateCoordinate($longitude, -180, 180, 'longitude');
         $this->assertInsideOffice($latitude, $longitude);
+        $selfieData = AttendanceService::storeSelfie($selfie, $tanggal, $adminId, 'selfie_pulang', 'admin');
 
         $this->db->beginTransaction();
         try {
@@ -130,19 +159,27 @@ class AdminAttendanceService
                 throw new RuntimeException('Anda sudah absen pulang hari ini');
             }
 
+            $updates = array('waktu_pulang = ?', 'latitude_pulang = ?', 'longitude_pulang = ?', 'updated_at = ?');
+            $values = array(
+                $waktu,
+                $latitude,
+                $longitude,
+                Config::companyNow()->format('Y-m-d H:i:s'),
+            );
+            if ($selfieData && $this->hasColumn('selfie_pulang')) {
+                $updates[] = 'selfie_pulang = ?';
+                $values[] = $selfieData['path'];
+            }
+            if ($selfieData && $this->hasColumn('selfie_pulang_mime')) {
+                $updates[] = 'selfie_pulang_mime = ?';
+                $values[] = $selfieData['mime_type'];
+            }
+            $values[] = (int)$row['id'];
+            $values[] = (int)$adminId;
             $stmt = $this->db->run(
-                'UPDATE admin_attendances
-                  SET waktu_pulang = ?, latitude_pulang = ?, longitude_pulang = ?,
-                      updated_at = ?
-                  WHERE id = ? AND admin_id = ? AND waktu_pulang IS NULL',
-                array(
-                    $waktu,
-                    $latitude,
-                    $longitude,
-                    Config::companyNow()->format('Y-m-d H:i:s'),
-                    (int)$row['id'],
-                    (int)$adminId,
-                )
+                'UPDATE admin_attendances SET ' . implode(', ', $updates) .
+                ' WHERE id = ? AND admin_id = ? AND waktu_pulang IS NULL',
+                $values
             );
             if ($stmt->rowCount() === 0) {
                 $this->db->rollBack();

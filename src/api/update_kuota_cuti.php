@@ -1,47 +1,47 @@
 <?php
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Authorization");
 
-$data = json_decode(file_get_contents("php://input"));
-
-// Menerima array employee_ids dan jumlah tambahan
-if (!empty($data->employee_ids) && isset($data->tambahan_hari)) {
-    try {
-        $pdo = new PDO("mysql:host=localhost;dbname=hris;charset=utf8mb4", "HRIS", "Admin@2026");
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-        $tambahan = (int)$data->tambahan_hari;
-        $ids = $data->employee_ids; // Array of IDs
-
-        foreach ($ids as $id) {
-            $emp_id = (int)$id;
-            
-            // Cek apakah data kuota sudah ada
-            $stmtCek = $pdo->prepare("SELECT id FROM employee_leaves WHERE employee_id = ?");
-            $stmtCek->execute([$emp_id]);
-            
-            if ($stmtCek->fetch()) {
-                // Jika sudah ada, TAMBAHKAN kuota (bukan timpa)
-                $query = "UPDATE employee_leaves 
-                          SET total_leave_yarly = total_leave_yarly + ?, 
-                              remaining_leav = remaining_leav + ? 
-                          WHERE employee_id = ?";
-                $pdo->prepare($query)->execute([$tambahan, $tambahan, $emp_id]);
-            } else {
-                // Jika belum ada, buat baru
-                $query = "INSERT INTO employee_leaves (employee_id, total_leave_yarly, dedicated_leave, remaining_leav) 
-                          VALUES (?, ?, 0, ?)";
-                $pdo->prepare($query)->execute([$emp_id, $tambahan, $tambahan]);
-            }
-        }
-
-        echo json_encode(["status" => "success", "message" => "Kuota cuti berhasil ditambahkan"]);
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(["status" => "error", "message" => $e->getMessage()]);
-    }
-} else {
-    echo json_encode(["status" => "error", "message" => "Data tidak lengkap"]);
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
 }
-?>
+
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
+require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../service/LeaveQuotaService.php';
+
+Auth::requireApiHr();
+
+$data = Json::readRequest();
+$ids = array();
+if (!empty($data['employee_ids']) && is_array($data['employee_ids'])) {
+    foreach ($data['employee_ids'] as $id) {
+        $ids[] = (int)$id;
+    }
+} elseif (!empty($data['employee_id'])) {
+    $ids[] = (int)$data['employee_id'];
+}
+$days = isset($data['tambahan_hari']) ? $data['tambahan_hari'] : (isset($data['days']) ? $data['days'] : 0);
+
+if (!$ids || (float)$days <= 0) {
+    Json::error('Karyawan dan jumlah hari wajib diisi', 400);
+}
+
+try {
+    $service = new LeaveQuotaService(DBConnection::get());
+    foreach ($ids as $id) {
+        $service->addDays($id, $days);
+    }
+    Json::ok('Kuota cuti berhasil ditambahkan', array('updated' => count($ids)));
+} catch (InvalidArgumentException $e) {
+    Json::error('Karyawan dan jumlah hari tidak valid', 422);
+} catch (RuntimeException $e) {
+    Json::error('Skema kuota cuti tidak tersedia', 500);
+} catch (Exception $e) {
+    Json::error('Gagal menyimpan kuota cuti', 500);
+}

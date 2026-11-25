@@ -12,7 +12,7 @@ class AttendanceService
         $this->db = $db ?: new DBConnection();
     }
 
-    public static function storeSelfie($selfie, $tanggal, $employeeId, $prefix)
+    public static function storeSelfie($selfie, $tanggal, $employeeId, $prefix, $scope = '')
     {
         if (!is_string($selfie) ||
             preg_match('#^data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=\r\n]+)$#', $selfie, $m) !== 1) {
@@ -29,7 +29,7 @@ class AttendanceService
         }
 
         $extMap = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
-        $relativeDir = $tanggal . '/' . (int)$employeeId;
+        $relativeDir = ($scope !== '' ? rtrim($scope, '/') . '/' : '') . $tanggal . '/' . (int)$employeeId;
         $absoluteDir = rtrim(Config::SELFIE_STORAGE_DIR, '/\\') . '/' .
             str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
         if ((!is_dir($absoluteDir) && !mkdir($absoluteDir, 0755, true)) || !is_dir($absoluteDir)) {

@@ -99,6 +99,12 @@ class DBConnection
         ));
     }
 
+    /** Alias pintas pdo() untuk endpoint API. */
+    public static function get()
+    {
+        return self::pdo();
+    }
+
     function __construct($params = array())
     {
         $c = self::config();

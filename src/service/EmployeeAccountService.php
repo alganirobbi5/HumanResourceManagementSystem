@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../service/LeaveQuotaService.php';
 
 class EmployeeAccountService
 {
@@ -92,6 +93,8 @@ class EmployeeAccountService
             $employeeId = (int)$this->pdo->lastInsertId();
 
             $this->insertUser($employeeId, $username, $password, $optional['status']);
+            $quota = new LeaveQuotaService($this->pdo);
+            $quota->ensureForEmployee($employeeId, 12);
             $this->pdo->commit();
             return $employeeId;
         } catch (Exception $e) {

@@ -22,6 +22,7 @@ $data = Json::readRequest();
 $waktuLokal = isset($data['waktu_lokal']) ? $data['waktu_lokal'] : null;
 $latitude = isset($data['latitude']) ? $data['latitude'] : null;
 $longitude = isset($data['longitude']) ? $data['longitude'] : null;
+$selfie = isset($data['selfie']) ? $data['selfie'] : null;
 
 if (empty($waktuLokal)) {
     Json::error('waktu_lokal wajib diisi', 400);
@@ -32,7 +33,7 @@ if (!isset($latitude, $longitude)) {
 
 try {
     $service = new AdminAttendanceService();
-    $status = $service->checkOut($adminId, $waktuLokal, $latitude, $longitude);
+    $status = $service->checkOut($adminId, $waktuLokal, $latitude, $longitude, $selfie);
     Json::ok('Absen pulang Admin HR berhasil disimpan', array('data' => $status));
 } catch (InvalidArgumentException $e) {
     Json::error($e->getMessage(), 422);

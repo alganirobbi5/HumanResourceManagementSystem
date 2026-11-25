@@ -17,11 +17,11 @@ require_once __DIR__ . '/../service/LeaveService.php';
 
 $user = Auth::requireApiHr();
 
-$data = json_decode(file_get_contents("php://input"));
-$employeeId = isset($data->employee_id) ? (int)$data->employee_id : 0;
-$days = isset($data->days) ? (float)$data->days : 0;
-$year = isset($data->entitlement_year) && (int)$data->entitlement_year > 0
-    ? (int)$data->entitlement_year
+$data = Json::readRequest();
+$employeeId = isset($data['employee_id']) ? (int)$data['employee_id'] : 0;
+$days = isset($data['days']) ? (float)$data['days'] : 0;
+$year = isset($data['entitlement_year']) && (int)$data['entitlement_year'] > 0
+    ? (int)$data['entitlement_year']
     : (int)Config::companyNow()->format('Y');
 
 if ($employeeId <= 0 || $days <= 0) {
@@ -42,7 +42,7 @@ try {
         ),
     ));
 } catch (InvalidArgumentException $e) {
-    Json::error($e->getMessage(), 422);
+    Json::error('Karyawan dan jumlah hari wajib diisi', 422);
 } catch (Exception $e) {
     Json::error('Gagal menambahkan kuota cuti', 500);
 }
