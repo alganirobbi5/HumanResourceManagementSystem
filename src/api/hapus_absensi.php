@@ -15,20 +15,33 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 
 // Hanya HR yang boleh menghapus data absensi.
-$user = Auth::requireApiHr();
+Auth::requireApiHr();
 
 $data = json_decode(file_get_contents("php://input"));
 $id = isset($data->id) ? (int)$data->id : 0;
+$recordType = isset($data->record_type) ? strtolower(trim((string)$data->record_type)) : 'employee';
 if ($id <= 0) {
     Json::error('id absensi wajib diisi', 400);
+}
+if ($recordType !== 'admin') {
+    $recordType = 'employee';
 }
 
 try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+    if ($recordType === 'admin') {
+        require_once __DIR__ . '/../service/AdminAttendanceService.php';
+        $service = new AdminAttendanceService();
+        if (!$service->delete($id)) {
+            Json::error('Data absensi HR tidak ditemukan', 404);
+        }
+        Json::ok('Data absensi HR berhasil dihapus');
+    }
+
     $stmt = $pdo->prepare("SELECT id FROM attendances WHERE id = ? LIMIT 1");
-    $stmt->execute([$id]);
+    $stmt->execute(array($id));
     if (!$stmt->fetch()) {
         Json::error('Data absensi tidak ditemukan', 404);
     }
@@ -36,16 +49,18 @@ try {
     $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
     if ($col && $col->fetch()) {
         $stmt = $pdo->prepare("UPDATE attendances SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL");
-        $stmt->execute([$id]);
+        $stmt->execute(array($id));
         if ($stmt->rowCount() === 0) {
             Json::error('Data absensi sudah dihapus', 404);
         }
     } else {
         $stmt = $pdo->prepare("DELETE FROM attendances WHERE id = ?");
-        $stmt->execute([$id]);
+        $stmt->execute(array($id));
     }
 
     Json::ok('Data absensi berhasil dihapus');
 } catch (PDOException $e) {
+    Json::error('Gagal menghapus data absensi', 500);
+} catch (Exception $e) {
     Json::error('Gagal menghapus data absensi', 500);
 }

@@ -232,6 +232,30 @@ class AdminAttendanceService
         throw new InvalidArgumentException('Anda berada di luar area absensi yang diizinkan');
     }
 
+    /**
+     * Hapus riwayat absensi Admin HR berdasarkan id.
+     * Akses sudah dibatasi endpoint untuk role HR.
+     * Mengembalikan false bila data tidak ditemukan.
+     */
+    public function delete($id)
+    {
+        if (!$id) {
+            return false;
+        }
+        $row = $this->db->selectOne(
+            'SELECT id FROM admin_attendances WHERE id = ? LIMIT 1',
+            array((int)$id)
+        );
+        if (!$row) {
+            return false;
+        }
+        $this->db->run(
+            'DELETE FROM admin_attendances WHERE id = ?',
+            array((int)$id)
+        );
+        return true;
+    }
+
     private function isDuplicateKeyError(Exception $e)
     {
         return $e instanceof PDOException && $e->getCode() === '23000';
