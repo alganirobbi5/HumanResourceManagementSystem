@@ -4,6 +4,7 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/Config.php';
 require_once __DIR__ . '/../service/AttendanceService.php';
+require_once __DIR__ . '/../service/AttendanceReportService.php';
 require_once __DIR__ . '/../service/XlsxWriter.php';
 
 $user = Auth::requireApiHr();
@@ -30,17 +31,17 @@ if ($rangeDays > Config::MAX_EXPORT_RANGE_DAYS) {
 }
 
 try {
-    $service = new AttendanceService();
-    $rows = $service->forExport($startDate, $endDate);
+    $service = new AttendanceReportService(DBConnection::get());
+    $rows = $service->all(array('start_date' => $startDate, 'end_date' => $endDate));
 
     // Kelompokkan data per tanggal
     $byDate = array();
     foreach ($rows as $row) {
-        $byDate[$row['date']][] = $row;
+        $byDate[$row['tanggal']][] = $row;
     }
 
     $writer = new XlsxWriter();
-    $header = array('No.', 'ID Karyawan', 'Nama Karyawan', 'Departemen/Jabatan', 'Tanggal', 'Jam Absensi', 'Latitude', 'Longitude', 'Status');
+    $header = array('No.', 'ID / Username', 'Nama', 'Departemen/Jabatan', 'Tanggal', 'Jam Absensi', 'Latitude', 'Longitude', 'Status');
 
     $cursor = $d1;
     $end = $d2;
@@ -52,14 +53,14 @@ try {
         } else {
             $no = 1;
             foreach ($byDate[$date] as $att) {
-                $name = trim($att['first_name'] . ' ' . $att['last_name']);
-                $deptPos = trim(($att['department_name'] ?: '') . ' / ' . ($att['designation_name'] ?: ''), ' /');
+                $deptPos = trim(($att['department'] ?: '') . ' / ' . ($att['jabatan'] ?: ''), ' /');
+                $identifier = $att['employee_nik'] ?: $att['username'] ?: ($att['admin_id'] ? 'admin-' . $att['admin_id'] : (string)$att['id']);
                 $sheetRows[] = array(
                     $no++,
-                    $att['employee_nik'] !== null && $att['employee_nik'] !== '' ? $att['employee_nik'] : (string)$att['employee_id'],
-                    $name,
+                    $identifier,
+                    $att['nama'],
                     $deptPos,
-                    $att['date'],
+                    $att['tanggal'],
                     $att['clock_in'],
                     $att['latitude'],
                     $att['longitude'],
@@ -84,5 +85,5 @@ try {
     @unlink($tmpFile);
     exit;
 } catch (Exception $e) {
-    Json::error('Export gagal: ' . $e->getMessage(), 500);
+    Json::error('Export gagal', 500);
 }

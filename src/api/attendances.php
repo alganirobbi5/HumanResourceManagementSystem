@@ -4,6 +4,7 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/Config.php';
 require_once __DIR__ . '/../service/AttendanceService.php';
+require_once __DIR__ . '/../service/AttendanceReportService.php';
 require_once __DIR__ . '/../service/RateLimiter.php';
 
 $user = Auth::requireApi();
@@ -31,7 +32,8 @@ if ($method === 'GET') {
         if (!empty($_GET['keyword'])) {
             $filters['keyword'] = trim($_GET['keyword']);
         }
-        Json::ok('OK', $service->all($filters, $page));
+        $report = new AttendanceReportService(DBConnection::get());
+        Json::ok('OK', $report->paginate($report->all($filters), $page, 15));
     }
 
     if (!$user['employee_id']) {

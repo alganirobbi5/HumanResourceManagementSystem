@@ -2,12 +2,11 @@
 
 require_once __DIR__ . '/../../src/common/Auth.php';
 require_once __DIR__ . '/../../src/common/DBConnection.php';
-require_once __DIR__ . '/../../src/service/AttendanceService.php';
+require_once __DIR__ . '/../../src/service/AttendanceReportService.php';
 
 Auth::requireHr();
 
-$user = Auth::user();
-$attendanceService = new AttendanceService();
+$report = new AttendanceReportService(DBConnection::get());
 
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $filters = array();
@@ -24,7 +23,7 @@ if (!empty($_GET['keyword'])) {
     $filters['keyword'] = trim($_GET['keyword']);
 }
 
-$result = $attendanceService->all($filters, $page, 15);
+$result = $report->paginate($report->all($filters), $page, 15);
 $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
 ?>
 <!DOCTYPE html>
@@ -39,6 +38,10 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
     <link href="../../resource/css/font-awesome.css" rel="stylesheet">
     <link href="../../resource/css/nprogress.css" rel="stylesheet">
     <link href="../../resource/css/custom.css" rel="stylesheet">
+    <style>
+        .selfie-thumb { cursor: zoom-in; border: 1px solid #ddd; padding: 2px; background: #f7f7f7; }
+        .selfie-frame { text-align: center; }
+    </style>
 </head>
 <body class="nav-md">
 <div class="container body">
@@ -47,7 +50,7 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
 
         <div class="right_col" role="main">
             <div class="page-title">
-                <div class="title_left"><h3>Data Absensi Karyawan</h3></div>
+                <div class="title_left"><h3>Data Absensi Karyawan &amp; HR</h3></div>
             </div>
             <div class="clearfix"></div>
 
@@ -104,9 +107,9 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
                                         <thead>
                                         <tr>
                                             <th>No.</th>
-                                            <th>NIK</th>
-                                            <th>Nama Karyawan</th>
-                                            <th>Departemen</th>
+                                            <th>NIK / Username</th>
+                                            <th>Nama</th>
+                                            <th>Departemen / Jabatan</th>
                                             <th>Tanggal</th>
                                             <th>Jam</th>
                                             <th>Lokasi</th>
@@ -119,28 +122,28 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
                                         <?php foreach ($result['items'] as $row) { $no++; ?>
                                             <tr>
                                                 <td><?= $no ?></td>
-                                                <td><?= htmlspecialchars($row['employee_nik'] ?: '-') ?></td>
-                                                <td><?= htmlspecialchars(trim($row['first_name'] . ' ' . $row['last_name'])) ?></td>
-                                                <td><?= htmlspecialchars(($row['department_name'] ?: '-') . ' / ' . ($row['designation_name'] ?: '-')) ?></td>
-                                                <td><?= htmlspecialchars($row['date']) ?></td>
-                                                <td><?= htmlspecialchars(substr($row['clock_in'], 0, 5)) ?></td>
+                                                <td><?= htmlspecialchars((string)($row['employee_nik'] ?: $row['username'] ?: '-')) ?></td>
+                                                <td><?= htmlspecialchars($row['nama']) ?>
+                                                    <?php if ($row['record_type'] === 'admin') { ?>
+                                                        <span class="label label-primary">HR / Admin</span>
+                                                    <?php } ?>
+                                                </td>
+                                                <td><?= htmlspecialchars(($row['department'] ?: '-') . ' / ' . ($row['jabatan'] ?: '-')) ?></td>
+                                                <td><?= htmlspecialchars($row['tanggal']) ?></td>
+                                                <td><?= htmlspecialchars(substr((string)$row['clock_in'], 0, 5)) ?></td>
                                                 <td><?= htmlspecialchars($row['latitude'] . ', ' . $row['longitude']) ?></td>
                                                 <td><span class="label label-success"><?= htmlspecialchars($row['status']) ?></span></td>
                                                 <td>
-                                                <?php
-                                                $photoIn = !empty($row['selfie_path']) ? '../../src/api/selfie.php?id=' . (int)$row['id'] . '&type=in' : '';
-                                                $photoOut = !empty($row['selfie_out_path']) ? '../../src/api/selfie.php?id=' . (int)$row['id'] . '&type=out' : '';
-                                                ?>
-                                                <button type="button" class="btn btn-xs btn-info btn-detail"
-                                                            data-id="<?= (int)$row['id'] ?>"
-                                                            data-name="<?= htmlspecialchars(trim($row['first_name'] . ' ' . $row['last_name'])) ?>"
-                                                            data-date="<?= htmlspecialchars($row['date']) ?>"
-                                                            data-time="<?= htmlspecialchars(substr($row['clock_in'], 0, 5)) ?>"
+                                                    <button type="button" class="btn btn-xs btn-info btn-detail"
+                                                            data-name="<?= htmlspecialchars($row['nama']) ?>"
+                                                            data-date="<?= htmlspecialchars($row['tanggal']) ?>"
+                                                            data-time="<?= htmlspecialchars(substr((string)$row['clock_in'], 0, 5)) ?>"
+                                                            data-out="<?= htmlspecialchars(substr((string)$row['clock_out'], 0, 5)) ?>"
                                                             data-loc="<?= htmlspecialchars($row['latitude'] . ', ' . $row['longitude']) ?>"
-                                                            data-acc="<?= htmlspecialchars($row['gps_accuracy'] !== null ? round($row['gps_accuracy']) . ' m' : '-') ?>"
+                                                            data-type="<?= htmlspecialchars($row['record_type']) ?>"
                                                             data-status="<?= htmlspecialchars($row['status']) ?>"
-                                                            data-photo-in="<?= htmlspecialchars($photoIn) ?>"
-                                                            data-photo-out="<?= htmlspecialchars($photoOut) ?>">
+                                                            data-photo-in="<?= htmlspecialchars($row['selfie_in_url'] ? '../../src/api/' . $row['selfie_in_url'] : '') ?>"
+                                                            data-photo-out="<?= htmlspecialchars($row['selfie_out_url'] ? '../../src/api/' . $row['selfie_out_url'] : '') ?>">
                                                         Detail
                                                     </button>
                                                 </td>
@@ -157,7 +160,7 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
                                         for ($p = 1; $p <= $totalPages; $p++) {
                                             $qs['page'] = $p;
                                             $link = '?' . http_build_query($qs);
-                                        ?>
+                                            ?>
                                             <li class="<?= $p === $page ? 'active' : '' ?>">
                                                 <a href="<?= htmlspecialchars($link) ?>"><?= $p ?></a>
                                             </li>
@@ -180,24 +183,40 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
                         <h4 class="modal-title">Detail Absensi</h4>
                     </div>
                     <div class="modal-body">
-                        <p><strong>Karyawan:</strong> <span id="dName"></span></p>
-                        <p><strong>Tanggal:</strong> <span id="dDate"></span> <strong>Jam:</strong> <span id="dTime"></span></p>
+                        <p><strong>Karyawan:</strong> <span id="dName"></span> <span id="dType" class="label label-primary"></span></p>
+                        <p><strong>Tanggal:</strong> <span id="dDate"></span> <strong>Masuk:</strong> <span id="dTime"></span> <strong>Pulang:</strong> <span id="dOut"></span></p>
                         <p><strong>Lokasi:</strong> <span id="dLoc"></span></p>
-                        <p><strong>Akurasi GPS:</strong> <span id="dAcc"></span></p>
                         <p><strong>Status:</strong> <span id="dStatus"></span></p>
                         <div class="row">
-                            <div class="col-sm-6" id="dPhotoInWrap">
-                                <p><strong>Selfie Masuk</strong></p>
-                                <img id="dPhotoIn" class="img-responsive" style="max-width:100%;" alt="Selfie absen masuk">
+                            <div class="col-sm-6 selfie-frame" id="dPhotoInWrap">
+                                <p><strong>Foto Absen Masuk</strong></p>
+                                <img id="dPhotoIn" class="img-responsive selfie-thumb" style="max-width:100%;" alt="Foto absen masuk">
+                                <p class="text-muted small">Klik foto untuk pratinjau penuh</p>
                             </div>
-                            <div class="col-sm-6" id="dPhotoOutWrap">
-                                <p><strong>Selfie Pulang</strong></p>
-                                <img id="dPhotoOut" class="img-responsive" style="max-width:100%;" alt="Selfie absen pulang">
+                            <div class="col-sm-6 selfie-frame" id="dPhotoOutWrap">
+                                <p><strong>Foto Absen Pulang</strong></p>
+                                <img id="dPhotoOut" class="img-responsive selfie-thumb" style="max-width:100%;" alt="Foto absen pulang">
+                                <p class="text-muted small">Klik foto untuk pratinjau penuh</p>
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-default" data-dismiss="modal">Tutup</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lightbox -->
+        <div class="modal fade" id="photoModal" tabindex="-1" role="dialog">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+                        <h4 class="modal-title">Pratinjau Foto Absen</h4>
+                    </div>
+                    <div class="modal-body text-center">
+                        <img id="lightboxPhoto" class="img-responsive" style="margin:0 auto; max-height:75vh;" alt="Pratinjau foto absen">
                     </div>
                 </div>
             </div>
@@ -214,31 +233,35 @@ $totalPages = max(1, (int)ceil($result['total'] / $result['per_page']));
 <script src="../../resource/js/custom.min.js"></script>
 <script>
 $(function () {
+    function showPhoto(url) {
+        if (!url) return;
+        $('#lightboxPhoto').attr('src', url);
+        $('#photoModal').modal('show');
+    }
+    function setThumb(wrapId, imgId, url) {
+        if (url) {
+            $(wrapId).show();
+            $(imgId).attr('src', url).off('click').on('click', function () { showPhoto(url); });
+        } else {
+            $(wrapId).hide();
+            $(imgId).attr('src', '').off('click');
+        }
+    }
     $('.btn-detail').on('click', function () {
         var $btn = $(this);
         $('#dName').text($btn.data('name'));
+        $('#dType').text($btn.data('type') === 'admin' ? 'HR / Admin' : '').toggle($btn.data('type') === 'admin');
         $('#dDate').text($btn.data('date'));
         $('#dTime').text($btn.data('time'));
+        $('#dOut').text($btn.data('out') || '-');
         $('#dLoc').text($btn.data('loc'));
-        $('#dAcc').text($btn.data('acc'));
         $('#dStatus').text($btn.data('status'));
-        var photoIn = $btn.data('photo-in');
-        var photoOut = $btn.data('photo-out');
-        if (photoIn) {
-            $('#dPhotoInWrap').show();
-            $('#dPhotoIn').attr('src', photoIn);
-        } else {
-            $('#dPhotoInWrap').hide();
-            $('#dPhotoIn').attr('src', '');
-        }
-        if (photoOut) {
-            $('#dPhotoOutWrap').show();
-            $('#dPhotoOut').attr('src', photoOut);
-        } else {
-            $('#dPhotoOutWrap').hide();
-            $('#dPhotoOut').attr('src', '');
-        }
+        setThumb('#dPhotoInWrap', '#dPhotoIn', $btn.data('photo-in'));
+        setThumb('#dPhotoOutWrap', '#dPhotoOut', $btn.data('photo-out'));
         $('#detailModal').modal('show');
+    });
+    $('#detailModal').on('hidden.bs.modal', function () {
+        $('#lightboxPhoto').attr('src', '');
     });
 });
 </script>
