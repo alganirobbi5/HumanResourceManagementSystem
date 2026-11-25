@@ -221,6 +221,12 @@ class Auth
         return self::identify();
     }
 
+    public static function userId()
+    {
+        $u = self::identify();
+        return $u && isset($u['id']) ? (int)$u['id'] : null;
+    }
+
     public static function employeeId()
     {
         $u = self::identify();

@@ -20,56 +20,43 @@ if ($employee_id === null && !$lihatSemua) {
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-// Kolom opsional (judul/alasan tersimpan di `type`). Tetap kompatibel
-// jika skema database belum memiliki kolom reason/comment.
-$hasReason = false;
-try {
-    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'reason'");
-    $hasReason = $col && $col->fetch() !== false;
-} catch (PDOException $e) {
-    $hasReason = false;
-}
-$hasComment = false;
-try {
-    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'comment'");
-    $hasComment = $col && $col->fetch() !== false;
-} catch (PDOException $e) {
-    $hasComment = false;
+function riwayatHasColumn($pdo, $column)
+{
+    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE '" . $column . "'");
+    return $col && $col->fetch() !== false;
 }
 
-$fields = "id, employee_id, type, leave_from, leave_to, status, FROM_UNIXTIME(created_at) AS created_at";
-if ($hasReason) $fields .= ", reason";
-if ($hasComment) $fields .= ", comment";
-
-// Sembunyikan data yang sudah dihapus HR (soft-delete).
-$hasDeletedAt = false;
-try {
-    $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'deleted_at'");
-    $hasDeletedAt = $col && $col->fetch() !== false;
-} catch (PDOException $e) {
-    $hasDeletedAt = false;
+$fields = "l.id, l.employee_id, l.type, l.leave_from, l.leave_to, l.status,
+           FROM_UNIXTIME(l.created_at) AS created_at";
+foreach (array('reason', 'comment', 'catatan_leader', 'approved_by_name', 'decided_at') as $column) {
+    if (riwayatHasColumn($pdo, $column)) {
+        $fields .= ', l.' . $column;
+    }
 }
-$filter = $hasDeletedAt ? " WHERE deleted_at IS NULL" : "";
+$leaderJoin = '';
+foreach (array('leader_user_id', 'approved_by_user_id') as $column) {
+    if (riwayatHasColumn($pdo, $column)) {
+        $fields .= ', l.' . $column;
+    }
+}
+if (riwayatHasColumn($pdo, 'leader_user_id')) {
+    $fields .= ', CONCAT_WS(" ", le.first_name, le.last_name) AS target_leader_name';
+    $leaderJoin = ' LEFT JOIN users lu ON lu.id = l.leader_user_id
+                    LEFT JOIN employees le ON le.id = lu.employee_id';
+}
 
-// Admin HR tidak memiliki employee_id: tampilkan seluruh pengajuan.
-// Karyawan tetap hanya melihat riwayat miliknya (employee_id dari token/session).
+$filter = riwayatHasColumn($pdo, 'deleted_at') ? ' WHERE l.deleted_at IS NULL' : '';
+
 if ($lihatSemua) {
-    $stmt = $pdo->query("SELECT $fields FROM leaves $filter ORDER BY id DESC");
+    $stmt = $pdo->query("SELECT $fields FROM leaves l $leaderJoin $filter ORDER BY l.id DESC");
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $message = 'Riwayat cuti seluruh karyawan';
 } else {
-    $filter .= $hasDeletedAt ? " AND employee_id = ?" : " WHERE employee_id = ?";
-    $stmt = $pdo->prepare("SELECT $fields FROM leaves $filter ORDER BY id DESC");
+    $filter .= $filter !== '' ? ' AND l.employee_id = ?' : ' WHERE l.employee_id = ?';
+    $stmt = $pdo->prepare("SELECT $fields FROM leaves l $leaderJoin $filter ORDER BY l.id DESC");
     $stmt->execute([$employee_id]);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $message = 'Riwayat cuti berhasil diambil';
 }
 
-http_response_code(200);
-echo json_encode([
-    "success" => true,
-    "message" => $message,
-    "data" => $data
-]);
-exit;
-?>
+Json::ok($message, array('data' => $data));

@@ -4,6 +4,7 @@ header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST");
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../service/LeaveLeaderService.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -193,7 +194,8 @@ if (!empty($data->username) && !empty($data->password)) {
                         "employee_id" => $employeeId,
                         "username" => $user['username'],
                         "role" => $user['role'],
-                        "nama_lengkap" => $displayName
+                        "nama_lengkap" => $displayName,
+                        "is_leave_leader" => (new LeaveLeaderService())->isLeader((int)$user['id'])
                     ]
                 ]
             ]);
@@ -253,7 +255,8 @@ if (!empty($data->username) && !empty($data->password)) {
                         "admin_id" => (int)$admin['id'],
                         "username" => $admin['name'],
                         "role" => "hr",
-                        "nama_lengkap" => $admin['name']
+                        "nama_lengkap" => $admin['name'],
+                        "is_leave_leader" => (new LeaveLeaderService())->isLeader($userId)
                     ]
                 ]
             ]);

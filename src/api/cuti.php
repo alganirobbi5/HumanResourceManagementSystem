@@ -1,69 +1,59 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST");
 
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../service/LeaveLeaderService.php';
 
-$data = json_decode(file_get_contents("php://input"));
-
-if (!empty($data->employee_id) && !empty($data->start_date) && !empty($data->end_date) && !empty($data->reason)) {
-    try {
-        $pdo = DBConnection::pdo();
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-        $judul = !empty($data->title) ? (string)$data->title : (string)$data->reason;
-        $alasan = (string)$data->reason;
-
-        // Kolom reason opsional; tetap kompatibel jika migrasi belum dijalankan.
-        $hasReason = false;
-        try {
-            $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'reason'");
-            $hasReason = $col && $col->fetch() !== false;
-        } catch (PDOException $e) {
-            $hasReason = false;
-        }
-
-        if ($hasReason) {
-            $query = "INSERT INTO leaves (employee_id, type, reason, leave_from, leave_to, total_leave, status, created_at)
-              VALUES (?, ?, ?, ?, ?, 1, 1, ?)";
-            $stmt = $pdo->prepare($query);
-            $stmt->execute([
-                $data->employee_id,
-                $judul,
-                $alasan,
-                $data->start_date,
-                $data->end_date,
-                time(),
-            ]);
-        } else {
-            $query = "INSERT INTO leaves (employee_id, type, leave_from, leave_to, total_leave, status, created_at)
-              VALUES (?, ?, ?, ?, 1, 1, ?)";
-            $stmt = $pdo->prepare($query);
-            $stmt->execute([
-                $data->employee_id,
-                $judul,
-                $data->start_date,
-                $data->end_date,
-                time(),
-            ]);
-        }
-        
-        http_response_code(201);
-        echo json_encode(["status" => "success", "message" => "Pengajuan cuti berhasil dikirim"]);
-        
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode([
-            "status" => "error", 
-            "message" => "MYSQL ERROR: " . $e->getMessage()
-        ]);
-    }
-} else {
-    http_response_code(400);
-    echo json_encode(["status" => "error", "message" => "Data cuti tidak lengkap"]);
+$user = Auth::requireApi();
+if (!$user['employee_id']) {
+    Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
-?>
+
+$data = Json::readRequest();
+$leaderUserId = isset($data['leader_user_id']) ? (int)$data['leader_user_id'] : 0;
+$leaderService = new LeaveLeaderService();
+if ($leaderUserId <= 0 || !$leaderService->isLeader($leaderUserId)) {
+    Json::error('Leader persetujuan cuti tidak valid', 422);
+}
+
+$startDate = isset($data['start_date']) ? trim((string)$data['start_date']) : '';
+$endDate = isset($data['end_date']) ? trim((string)$data['end_date']) : '';
+$reason = isset($data['reason']) ? trim((string)$data['reason']) : '';
+if ($startDate === '' || $endDate === '' || $reason === '') {
+    Json::error('Data cuti tidak lengkap', 400);
+}
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+    Json::error('Format tanggal tidak valid', 422);
+}
+
+try {
+    $pdo = DBConnection::get();
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $judul = isset($data['title']) && $data['title'] !== '' ? (string)$data['title'] : $reason;
+
+    $columns = array('employee_id', 'type', 'leave_from', 'leave_to', 'total_leave', 'status', 'leader_user_id', 'created_at');
+    $values = array((int)$user['employee_id'], $judul, $startDate, $endDate, 1, 1, $leaderUserId, time());
+    foreach (array('reason' => $reason) as $column => $value) {
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE '" . $column . "'");
+        if ($col && $col->fetch()) {
+            $columns[] = $column;
+            $values[] = $value;
+        }
+    }
+    $stmt = $pdo->prepare('INSERT INTO leaves (' . implode(', ', $columns) . ') VALUES (' .
+        implode(', ', array_fill(0, count($values), '?')) . ')');
+    $stmt->execute($values);
+
+    echo json_encode(array('status' => 'success', 'message' => 'Pengajuan cuti berhasil dikirim', 'data' => array(
+        'id' => (int)$pdo->lastInsertId(),
+        'leader_user_id' => $leaderUserId,
+    )));
+    exit;
+} catch (PDOException $e) {
+    Json::error('Gagal menyimpan pengajuan cuti', 500);
+}

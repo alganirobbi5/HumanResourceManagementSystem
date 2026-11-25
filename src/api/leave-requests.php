@@ -75,7 +75,8 @@ if ($method === 'POST') {
                 isset($body['reason']) ? $body['reason'] : '',
                 isset($body['start_date']) ? $body['start_date'] : '',
                 isset($body['end_date']) ? $body['end_date'] : '',
-                isset($body['replacement_employee_id']) ? (int)$body['replacement_employee_id'] : 0
+                isset($body['replacement_employee_id']) ? (int)$body['replacement_employee_id'] : 0,
+                isset($body['leader_user_id']) ? (int)$body['leader_user_id'] : 0
             );
             Json::ok('Pengajuan cuti berhasil disimpan dan menunggu persetujuan', array('data' => $row));
         } catch (InvalidArgumentException $e) {
@@ -83,32 +84,31 @@ if ($method === 'POST') {
         } catch (RuntimeException $e) {
             Json::error($e->getMessage(), 409);
         } catch (Exception $e) {
-            Json::error($e->getMessage(), 500);
+            Json::error('Gagal menyimpan pengajuan cuti', 500);
         }
     }
 
     if ($action === 'approve' || $action === 'reject') {
-        if ($user['role'] !== 'hr') {
-            Json::error('Anda tidak memiliki izin memproses pengajuan cuti', 403);
-        }
         $id = isset($body['id']) ? (int)$body['id'] : 0;
         if (!$id) {
             Json::error('Pengajuan cuti tidak valid', 422);
         }
         try {
+            $catatanLeader = isset($body['catatan_leader']) ? trim((string)$body['catatan_leader']) : null;
             if ($action === 'approve') {
-                $row = $service->approve($id, (int)$user['id']);
+                $row = $service->approve($id, (int)$user['id'], $catatanLeader);
                 Json::ok('Pengajuan cuti disetujui', array('data' => $row));
             } else {
-                $row = $service->reject($id, (int)$user['id'], isset($body['rejection_reason']) ? $body['rejection_reason'] : '');
+                $row = $service->reject($id, (int)$user['id'], isset($body['rejection_reason']) ? $body['rejection_reason'] : '', $catatanLeader);
                 Json::ok('Pengajuan cuti ditolak', array('data' => $row));
             }
         } catch (InvalidArgumentException $e) {
-            Json::error($e->getMessage(), 422);
+            Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);
         } catch (RuntimeException $e) {
-            Json::error($e->getMessage(), 409);
+            $code = (int)$e->getCode();
+            Json::error($e->getMessage(), in_array($code, array(403, 404, 409), true) ? $code : 409);
         } catch (Exception $e) {
-            Json::error($e->getMessage(), 500);
+            Json::error('Gagal memproses pengajuan cuti', 500);
         }
     }
 

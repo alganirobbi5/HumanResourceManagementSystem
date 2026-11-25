@@ -4,12 +4,14 @@ require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../common/Config.php';
 require_once __DIR__ . '/NotificationService.php';
 require_once __DIR__ . '/AuditLog.php';
+require_once __DIR__ . '/LeaveLeaderService.php';
 
 class LeaveService
 {
     private $db;
     private $notifications;
     private $audit;
+    private $leaders;
 
     public function __construct(DBConnection $db = null)
     {
@@ -17,6 +19,7 @@ class LeaveService
         $this->ensureTables();
         $this->notifications = new NotificationService($this->db);
         $this->audit = new AuditLog($this->db);
+        $this->leaders = new LeaveLeaderService($this->db->getPdo());
     }
 
     /** Pastikan tabel fitur cuti tersedia walau migrasi belum dijalankan di produksi. */
@@ -183,7 +186,13 @@ class LeaveService
         return (int)$start->diff($end)->days + 1;
     }
 
-    public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId)
+    private function hasLeaveRequestColumn($column)
+    {
+        $stmt = $this->db->getPdo()->query("SHOW COLUMNS FROM leave_requests LIKE '" . $column . "'");
+        return $stmt && $stmt->fetch() !== false;
+    }
+
+    public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId, $leaderUserId = null)
     {
         $reason = trim((string)$reason);
         if ($reason === '') {
@@ -194,6 +203,10 @@ class LeaveService
         }
         if (!$replacementEmployeeId) {
             throw new InvalidArgumentException('Nama pengganti wajib dipilih');
+        }
+        $leaderUserId = (int)$leaderUserId;
+        if ($leaderUserId <= 0 || !$this->leaders->isLeader($leaderUserId)) {
+            throw new InvalidArgumentException('Leader persetujuan cuti tidak valid', 422);
         }
 
         $totalDays = $this->calculateDays($startDate, $endDate); // validasi tanggal + hitung ulang
@@ -240,23 +253,28 @@ class LeaveService
         }
 
         $now = Config::companyNow()->format('Y-m-d H:i:s');
+        $columns = array('employee_id', 'reason', 'start_date', 'end_date', 'total_days',
+            'replacement_employee_id', 'status', 'submitted_at', 'created_at', 'updated_at');
+        $values = array(
+            (int)$employeeId,
+            $reason,
+            $startDate,
+            $endDate,
+            $totalDays,
+            (int)$replacementEmployeeId,
+            'pending',
+            $now,
+            $now,
+            $now
+        );
+        if ($this->hasLeaveRequestColumn('leader_user_id')) {
+            $columns[] = 'leader_user_id';
+            $values[] = $leaderUserId;
+        }
         $id = $this->db->insert(
-            'INSERT INTO leave_requests
-                (employee_id, reason, start_date, end_date, total_days, replacement_employee_id,
-                 status, submitted_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            array(
-                (int)$employeeId,
-                $reason,
-                $startDate,
-                $endDate,
-                $totalDays,
-                (int)$replacementEmployeeId,
-                'pending',
-                $now,
-                $now,
-                $now
-            )
+            'INSERT INTO leave_requests (' . implode(', ', $columns) . ') VALUES (' .
+            implode(', ', array_fill(0, count($values), '?')) . ')',
+            $values
         );
 
         $this->notifications->notifyHr(
@@ -278,12 +296,20 @@ class LeaveService
 
     private function baseSelect($extraJoin = '')
     {
+        $leaderName = 'NULL AS target_leader_name';
+        $leaderJoin = '';
+        if ($this->hasLeaveRequestColumn('leader_user_id')) {
+            $leaderName = 'CONCAT_WS(" ", le.first_name, le.last_name) AS target_leader_name';
+            $leaderJoin = ' LEFT JOIN users lu ON lu.id = lr.leader_user_id
+                            LEFT JOIN employees le ON le.id = lu.employee_id';
+        }
         return 'SELECT lr.*,
                        e.first_name, e.last_name, e.user_name AS employee_nik,
                        e.department_id, e.designation_id,
                        d.name AS department_name, dg.title AS designation_name,
                        r.first_name AS replacement_first_name, r.last_name AS replacement_last_name,
-                       a.first_name AS reviewer_first_name, a.last_name AS reviewer_last_name
+                       a.first_name AS reviewer_first_name, a.last_name AS reviewer_last_name,
+                       ' . $leaderName . '
                 FROM leave_requests lr
                 LEFT JOIN employees e ON e.id = lr.employee_id
                 LEFT JOIN departments d ON d.id = e.department_id
@@ -291,7 +317,7 @@ class LeaveService
                 LEFT JOIN employees r ON r.id = lr.replacement_employee_id
                 LEFT JOIN users au ON au.id = lr.reviewed_by
                 LEFT JOIN employees a ON a.id = au.employee_id'
-                . $extraJoin;
+                . $leaderJoin . $extraJoin;
     }
 
     public function detail($id)
@@ -381,7 +407,39 @@ class LeaveService
         );
     }
 
-    public function approve($id, $approverUserId)
+    const NOT_LEADER_MESSAGE = 'Hanya user yang terdaftar sebagai Leader persetujuan cuti yang dapat menyetujui atau menolak pengajuan.';
+
+    private function assertLeaderCanDecide($row, $approverUserId)
+    {
+        if (!$this->leaders->isLeader($approverUserId)) {
+            throw new RuntimeException(self::NOT_LEADER_MESSAGE, 403);
+        }
+        if (!empty($row['leader_user_id']) && (int)$row['leader_user_id'] !== (int)$approverUserId) {
+            throw new RuntimeException('Pengajuan cuti ini ditujukan kepada Leader lain', 403);
+        }
+    }
+
+    private function appendLeaderDecision(array &$set, array &$params, $approverUserId, $catatanLeader, $now)
+    {
+        if ($this->hasLeaveRequestColumn('approved_by_user_id')) {
+            $set[] = 'approved_by_user_id = ?';
+            $params[] = (int)$approverUserId;
+        }
+        if ($this->hasLeaveRequestColumn('approved_by_name')) {
+            $set[] = 'approved_by_name = ?';
+            $params[] = $this->leaders->leaderName($approverUserId);
+        }
+        if ($catatanLeader !== null && $this->hasLeaveRequestColumn('catatan_leader')) {
+            $set[] = 'catatan_leader = ?';
+            $params[] = $catatanLeader;
+        }
+        if ($this->hasLeaveRequestColumn('decided_at')) {
+            $set[] = 'decided_at = ?';
+            $params[] = $now;
+        }
+    }
+
+    public function approve($id, $approverUserId, $catatanLeader = null)
     {
         $this->db->beginTransaction();
         try {
@@ -396,6 +454,7 @@ class LeaveService
             if ($row['status'] !== 'pending') {
                 throw new RuntimeException('Pengajuan sudah diproses sebelumnya');
             }
+            $this->assertLeaderCanDecide($row, $approverUserId);
 
             $balance = $this->db->selectOne(
                 'SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ? FOR UPDATE',
@@ -412,11 +471,14 @@ class LeaveService
             }
 
             $now = Config::companyNow()->format('Y-m-d H:i:s');
+            $set = array("status = 'approved'", 'reviewed_by = ?', 'reviewed_at = ?',
+                'rejection_reason = NULL', 'updated_at = ?');
+            $params = array((int)$approverUserId, $now, $now);
+            $this->appendLeaderDecision($set, $params, $approverUserId, $catatanLeader, $now);
+            $params[] = (int)$id;
             $this->db->run(
-                "UPDATE leave_requests
-                 SET status = 'approved', reviewed_by = ?, reviewed_at = ?, rejection_reason = NULL, updated_at = ?
-                 WHERE id = ? AND status = 'pending'",
-                array((int)$approverUserId, $now, $now, (int)$id)
+                'UPDATE leave_requests SET ' . implode(', ', $set) . ' WHERE id = ? AND status = "pending"',
+                $params
             );
             $this->db->run(
                 'UPDATE leave_balances SET used_days = used_days + ?, updated_at = ? WHERE id = ?',
@@ -459,7 +521,7 @@ class LeaveService
         return $this->detail($id);
     }
 
-    public function reject($id, $approverUserId, $rejectionReason)
+    public function reject($id, $approverUserId, $rejectionReason, $catatanLeader = null)
     {
         $rejectionReason = trim((string)$rejectionReason);
         if ($rejectionReason === '') {
@@ -478,13 +540,23 @@ class LeaveService
             if ($row['status'] !== 'pending') {
                 throw new RuntimeException('Pengajuan sudah diproses sebelumnya');
             }
+            $this->assertLeaderCanDecide($row, $approverUserId);
 
             $now = Config::companyNow()->format('Y-m-d H:i:s');
+            $set = array("status = 'rejected'", 'reviewed_by = ?', 'reviewed_at = ?',
+                'rejection_reason = ?', 'updated_at = ?');
+            $params = array((int)$approverUserId, $now, $rejectionReason, $now);
+            $this->appendLeaderDecision(
+                $set,
+                $params,
+                $approverUserId,
+                $catatanLeader !== null ? $catatanLeader : $rejectionReason,
+                $now
+            );
+            $params[] = (int)$id;
             $this->db->run(
-                "UPDATE leave_requests
-                 SET status = 'rejected', reviewed_by = ?, reviewed_at = ?, rejection_reason = ?, updated_at = ?
-                 WHERE id = ? AND status = 'pending'",
-                array((int)$approverUserId, $now, $rejectionReason, $now, (int)$id)
+                'UPDATE leave_requests SET ' . implode(', ', $set) . ' WHERE id = ? AND status = "pending"',
+                $params
             );
             // Penolakan tidak mengurangi kuota
             $this->db->commit();
