@@ -33,8 +33,21 @@ class AttendanceReportService
         return null;
     }
 
+    private function jamMasukKerja()
+    {
+        if (!$this->hasTable('pengaturan_jam')) {
+            return null;
+        }
+        $row = $this->pdo->query('SELECT jam_masuk FROM pengaturan_jam LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+        if (!$row || empty($row['jam_masuk'])) {
+            return null;
+        }
+        return substr((string)$row['jam_masuk'], 0, 5);
+    }
+
     private function employeeRows()
     {
+        $jamMasukKerja = $this->jamMasukKerja();
         $columns = array('a.id', 'a.employee_id', 'a.date', 'a.clock_in', 'a.clock_out',
             'a.total_work', 'a.status', 'a.latitude', 'a.longitude');
         foreach (array('gps_accuracy', 'selfie_path', 'selfie_out_path') as $column) {
@@ -106,6 +119,9 @@ class AttendanceReportService
                 'jam_pulang' => $row['clock_out'],
                 'total_work' => $row['total_work'],
                 'status' => $row['status'],
+                'terlambat' => ($jamMasukKerja !== null && !empty($row['clock_in'])
+                    && substr((string)$row['clock_in'], 0, 5) > $jamMasukKerja),
+                'jam_masuk_kerja' => $jamMasukKerja,
                 'latitude' => $row['latitude'],
                 'longitude' => $row['longitude'],
                 'out_latitude' => isset($row['out_latitude']) ? $row['out_latitude'] : null,

@@ -32,7 +32,9 @@ if ($isHrAdmin) {
         );
         $totalJam = null;
         if ($status['jam_masuk'] && $status['jam_pulang']) {
-            $diff = (new DateTime($status['jam_masuk']))->diff(new DateTime($status['jam_pulang']));
+            $tanggalKerja = Config::companyToday();
+            $diff = (new DateTime($tanggalKerja . ' ' . $status['jam_masuk']))
+                ->diff(new DateTime($tanggalKerja . ' ' . $status['jam_pulang']));
             $totalJam = round($diff->h + ($diff->i / 60), 2) . ' jam';
         }
         Json::out(array(
@@ -90,7 +92,12 @@ foreach (array('selfie_path', 'selfie_out_path') as $column) {
         $selfieColumn .= ', ' . $column;
     }
 }
-$stmt = $pdo->prepare("SELECT id, clock_in, clock_out$selfieColumn FROM attendances WHERE employee_id = ? AND date = ? ORDER BY id DESC LIMIT 1");
+$filterDeleted = '';
+$checkDeleted = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
+if ($checkDeleted && $checkDeleted->fetch()) {
+    $filterDeleted = ' AND deleted_at IS NULL';
+}
+$stmt = $pdo->prepare("SELECT id, clock_in, clock_out$selfieColumn FROM attendances WHERE employee_id = ? AND date = ?$filterDeleted ORDER BY id DESC LIMIT 1");
 $stmt->execute([$employee_id, $tanggal]);
 $absen = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -102,8 +109,8 @@ if ($absen['clock_out'] && $absen['clock_out'] !== '00:00:00') {
     Json::error('Anda sudah absen pulang hari ini.', 400);
 }
 
-$clock_in = new DateTime($absen['clock_in']);
-$clock_out = new DateTime($waktu_sekarang);
+$clock_in = new DateTime($tanggal . ' ' . $absen['clock_in']);
+$clock_out = new DateTime($tanggal . ' ' . $waktu_sekarang);
 $diff = $clock_in->diff($clock_out);
 $total_jam = $diff->h + ($diff->i / 60);
 

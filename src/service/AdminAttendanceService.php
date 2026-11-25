@@ -130,14 +130,9 @@ class AdminAttendanceService
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
         }
 
-        $timestamp = strtotime((string)$waktuLokal);
-        if (!$timestamp) {
-            throw new InvalidArgumentException('Waktu absen pulang tidak valid');
-        }
-        $localTime = new DateTime('@' . $timestamp);
-        $localTime->setTimezone(new DateTimeZone(Config::TIMEZONE));
-        $tanggal = $localTime->format('Y-m-d');
-        $waktu = $localTime->format('H:i:s');
+        $now = Config::companyNow();
+        $tanggal = $now->format('Y-m-d');
+        $waktu = $now->format('H:i:s');
 
         $latitude = $this->validateCoordinate($latitude, -90, 90, 'latitude');
         $longitude = $this->validateCoordinate($longitude, -180, 180, 'longitude');

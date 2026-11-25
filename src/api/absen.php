@@ -108,7 +108,12 @@ if (!$is_dalam_radius) {
     Json::error('Anda berada di luar area absensi yang diizinkan.', 400);
 }
 
-$stmtCek = $pdo->prepare("SELECT id FROM attendances WHERE employee_id = ? AND date = ?");
+$filterDeletedCek = '';
+$colDeleted = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
+if ($colDeleted && $colDeleted->fetch()) {
+    $filterDeletedCek = ' AND deleted_at IS NULL';
+}
+$stmtCek = $pdo->prepare("SELECT id FROM attendances WHERE employee_id = ? AND date = ?$filterDeletedCek");
 $stmtCek->execute([$employee_id, $tanggal]);
 if ($stmtCek->fetch()) {
     Json::error('Anda sudah melakukan absen hari ini.', 400);
