@@ -1,19 +1,22 @@
 <?php
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../service/LeaveLeaderService.php';
 
 class IzinKeluarService
 {
     private $pdo;
+    private $leaders;
 
     public function __construct(PDO $pdo = null)
     {
         $this->pdo = $pdo ?: DBConnection::get();
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->ensureTable();
+        $this->leaders = new LeaveLeaderService($this->pdo);
     }
 
-    /** Pastikan tabel tersedia walau migrasi belum dijalankan manual. */
+    /** Pastikan tabel dan kolom tersedia walau migrasi belum dijalankan manual. */
     private function ensureTable()
     {
         $sql = 'CREATE TABLE IF NOT EXISTS izin_keluar (
@@ -40,6 +43,18 @@ class IzinKeluarService
             if (!$exists || !$exists->fetch()) {
                 $this->pdo->exec($sql);
             }
+            $columns = array(
+                'leader_user_id' => 'INT(11) NULL DEFAULT NULL',
+                'approved_by_user_id' => 'INT(11) NULL DEFAULT NULL',
+                'approved_by_name' => 'VARCHAR(150) NULL DEFAULT NULL',
+                'catatan_leader' => 'TEXT NULL',
+                'decided_at' => 'DATETIME NULL DEFAULT NULL',
+            );
+            foreach ($columns as $name => $definition) {
+                if (!$this->pdo->query("SHOW COLUMNS FROM izin_keluar LIKE '" . $name . "'")->fetch()) {
+                    $this->pdo->exec('ALTER TABLE izin_keluar ADD COLUMN ' . $name . ' ' . $definition);
+                }
+            }
         } catch (PDOException $e) {
             // Biarkan method yang dipakai yang melaporkan kegagalan.
         }
@@ -61,9 +76,19 @@ class IzinKeluarService
         return (int)$m[1] >= 0 && (int)$m[1] <= 23 && (int)$m[2] >= 0 && (int)$m[2] <= 59;
     }
 
+    private function baseSelect()
+    {
+        return 'SELECT i.*, e.first_name, e.last_name, e.user_name, e.department_id,
+                CONCAT_WS(" ", lu.first_name, lu.last_name) AS target_leader_name
+                FROM izin_keluar i
+                LEFT JOIN employees e ON e.id = i.employee_id
+                LEFT JOIN users luser ON luser.id = i.leader_user_id
+                LEFT JOIN employees lu ON lu.id = luser.employee_id';
+    }
+
     private function find($id)
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM izin_keluar WHERE id = ? LIMIT 1');
+        $stmt = $this->pdo->prepare($this->baseSelect() . ' WHERE i.id = ? LIMIT 1');
         $stmt->execute([(int)$id]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
@@ -73,6 +98,11 @@ class IzinKeluarService
         $employeeId = (int)$employeeId;
         if ($employeeId <= 0) {
             throw new InvalidArgumentException('Karyawan tidak valid', 422);
+        }
+
+        $leaderUserId = isset($input['leader_user_id']) ? (int)$input['leader_user_id'] : 0;
+        if ($leaderUserId <= 0 || !$this->leaders->isLeader($leaderUserId)) {
+            throw new InvalidArgumentException('Leader persetujuan izin keluar tidak valid', 422);
         }
 
         $tanggal = isset($input['tanggal']) ? trim((string)$input['tanggal']) : '';
@@ -101,8 +131,9 @@ class IzinKeluarService
 
         $stmt = $this->pdo->prepare(
             'INSERT INTO izin_keluar
-                (employee_id, tanggal, jam_keluar, jam_kembali, kembali_ke_kantor, kategori, alasan, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, "pending")'
+                (employee_id, tanggal, jam_keluar, jam_kembali, kembali_ke_kantor,
+                 kategori, alasan, status, leader_user_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, "pending", ?)'
         );
         $stmt->execute(array(
             $employeeId,
@@ -112,19 +143,38 @@ class IzinKeluarService
             $kembali,
             $kategori,
             $alasan,
+            $leaderUserId,
         ));
         return $this->find((int)$this->pdo->lastInsertId());
     }
 
     public function listByEmployee($employeeId, $status = null)
     {
-        $sql = 'SELECT * FROM izin_keluar WHERE employee_id = ?';
+        $sql = $this->baseSelect() . ' WHERE i.employee_id = ?';
         $params = array((int)$employeeId);
         if ($status !== null && $status !== '') {
-            $sql .= ' AND status = ?';
+            $sql .= ' AND i.status = ?';
             $params[] = (string)$status;
         }
-        $sql .= ' ORDER BY tanggal DESC, jam_keluar DESC, id DESC';
+        $sql .= ' ORDER BY i.tanggal DESC, i.jam_keluar DESC, i.id DESC';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function listForLeader($leaderUserId, $status = null, $tanggal = null)
+    {
+        $sql = $this->baseSelect() . ' WHERE i.leader_user_id = ?';
+        $params = array((int)$leaderUserId);
+        if ($status !== null && $status !== '') {
+            $sql .= ' AND i.status = ?';
+            $params[] = (string)$status;
+        }
+        if ($tanggal !== null && $tanggal !== '') {
+            $sql .= ' AND i.tanggal = ?';
+            $params[] = (string)$tanggal;
+        }
+        $sql .= ' ORDER BY i.tanggal DESC, i.jam_keluar DESC, i.id DESC';
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -132,9 +182,7 @@ class IzinKeluarService
 
     public function listAll($status = null, $tanggal = null)
     {
-        $sql = 'SELECT i.*, e.first_name, e.last_name, e.user_name, e.department_id
-                FROM izin_keluar i
-                LEFT JOIN employees e ON e.id = i.employee_id';
+        $sql = $this->baseSelect();
         $conditions = array();
         $params = array();
         if ($status !== null && $status !== '') {
@@ -154,16 +202,20 @@ class IzinKeluarService
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function decide($id, $decision, $hrUserId, $catatanHr = null)
+    public function decide($id, $decision, $leaderUserId, $catatanLeader = null)
     {
         $decision = strtolower(trim((string)$decision));
         if (!in_array($decision, array('approved', 'rejected'), true)) {
             throw new InvalidArgumentException('Keputusan harus approved atau rejected', 422);
         }
+        $leaderUserId = (int)$leaderUserId;
+        if (!$this->leaders->isLeader($leaderUserId)) {
+            throw new RuntimeException(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
+        }
 
         $this->pdo->beginTransaction();
         try {
-            $stmt = $this->pdo->prepare('SELECT id, status FROM izin_keluar WHERE id = ? FOR UPDATE');
+            $stmt = $this->pdo->prepare('SELECT id, status, leader_user_id FROM izin_keluar WHERE id = ? FOR UPDATE');
             $stmt->execute([(int)$id]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$row) {
@@ -174,10 +226,27 @@ class IzinKeluarService
                 $this->pdo->rollBack();
                 throw new RuntimeException('Pengajuan sudah diproses sebelumnya', 409);
             }
+            if (!empty($row['leader_user_id']) && (int)$row['leader_user_id'] !== $leaderUserId) {
+                $this->pdo->rollBack();
+                throw new RuntimeException('Pengajuan izin keluar ini ditujukan kepada Leader lain', 403);
+            }
 
+            $leaderName = $this->leaders->leaderName($leaderUserId);
             $this->pdo->prepare(
-                'UPDATE izin_keluar SET status = ?, approved_by = ?, catatan_hr = ? WHERE id = ? AND status = "pending"'
-            )->execute(array($decision, (int)$hrUserId, $catatanHr, (int)$id));
+                'UPDATE izin_keluar
+                 SET status = ?, approved_by = ?, catatan_hr = ?,
+                     approved_by_user_id = ?, approved_by_name = ?, catatan_leader = ?,
+                     decided_at = NOW()
+                 WHERE id = ? AND status = "pending"'
+            )->execute(array(
+                $decision,
+                $leaderUserId,
+                $catatanLeader,
+                $leaderUserId,
+                $leaderName,
+                $catatanLeader,
+                (int)$id,
+            ));
             $this->pdo->commit();
         } catch (Exception $e) {
             if ($this->pdo->inTransaction()) {
