@@ -122,6 +122,7 @@ Response mengikuti envelope standar `{ success, message, data }`.
 | GET | `/src/api/status_absen_admin.php` | Status absensi admin yang login. Opsional `?date=YYYY-MM-DD` |
 | POST | `/src/api/absen_admin.php` | Absen masuk (JSON) |
 | POST | `/src/api/absen_pulang_admin.php` | Absen pulang (JSON) |
+| GET | `/src/api/laporan_absensi_admin.php` | Laporan absensi admin yang login (dipakai Flutter) |
 
 Field JSON (absen masuk dan pulang):
 
@@ -195,6 +196,40 @@ Error:
 Catatan migrasi: jalankan `DB/migrations/20261120_admin_api_identity.sql` sebelum memakai
 endpoint ini. Migrasi menambah `users.admin_id` (UNIQUE) dan tabel `admin_attendances`
 (UNIQUE `(admin_id, tanggal)`). Tidak ada employee record yang dibuat untuk admin.
+
+### Laporan absensi admin
+
+`GET /src/api/laporan_absensi_admin.php` mengembalikan hanya baris `admin_attendances`
+milik admin yang login. Filter: `?date=YYYY-MM-DD` atau `?start_date=...&end_date=...`.
+
+```json
+{
+  "success": true,
+  "message": "Daftar absensi Admin HR",
+  "data": [
+    {
+      "id": 9,
+      "record_type": "admin",
+      "admin_id": 1,
+      "nama_lengkap": "Admin HR",
+      "nama": "Admin HR",
+      "tanggal": "2026-11-25",
+      "date": "2026-11-25",
+      "jam_masuk": "08:01:00",
+      "clock_in": "08:01:00",
+      "jam_keluar": "17:05:00",
+      "clock_out": "17:05:00",
+      "status": "recorded",
+      "selfie_in_url": "selfie.php?id=9&type=in&scope=admin",
+      "selfie_out_url": "selfie.php?id=9&type=out&scope=admin"
+    }
+  ]
+}
+```
+
+Catatan: `laporan_absensi.php` juga menyertakan data admin, tetapi dengan field `nama`
+(bukan `nama_lengkap`). Endpoint ini disediakan agar Flutter dapat menggabungkan laporan
+dengan deduplikasi berdasarkan `id`.
 
 ## Menjalankan migrasi
 
