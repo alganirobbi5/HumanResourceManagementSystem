@@ -156,6 +156,30 @@ if (!$result) {
 }
 $attendanceId = (int)$pdo->lastInsertId();
 
+try {
+    require_once __DIR__ . '/../service/NotificationService.php';
+    $namaKaryawan = '';
+    $employeeRow = $pdo->prepare(
+        'SELECT first_name, last_name FROM employees WHERE id = ? LIMIT 1'
+    );
+    $employeeRow->execute(array((int)$employee_id));
+    if ($found = $employeeRow->fetch(PDO::FETCH_ASSOC)) {
+        $namaKaryawan = trim((string)$found['first_name'] . ' ' . (string)$found['last_name']);
+    }
+    if ($namaKaryawan === '') {
+        $namaKaryawan = (string)(isset($user['username']) ? $user['username'] : 'Karyawan');
+    }
+    (new NotificationService())->notifyHr(
+        'Absen Masuk Karyawan',
+        $namaKaryawan . ' melakukan absen masuk pukul ' . $waktu_sekarang,
+        'attendance',
+        'attendance',
+        $attendanceId
+    );
+} catch (Exception $e) {
+    error_log('[FCM] notifikasi absen masuk gagal: ' . $e->getMessage());
+}
+
 Json::out(array(
     'success' => true,
     'message' => 'Absen berhasil disimpan',

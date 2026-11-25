@@ -5,3 +5,5 @@ src/common/db.local.php
 *.local.php
 
 DB/admin_employee_identity.local.php
+src/common/fcm.local.php
+storage/fcm_access_token.cache
