@@ -44,7 +44,9 @@ try {
         $companyId = isset($data['company_id']) ? (int)$data['company_id'] : 0;
         $firstName = isset($data['first_name']) ? trim((string)$data['first_name']) : '';
         $lastName = isset($data['last_name']) ? trim((string)$data['last_name']) : '';
-        $username = isset($data['user_name']) ? trim((string)$data['user_name']) : '';
+        $username = isset($data['user_name'])
+            ? trim((string)$data['user_name'])
+            : (isset($data['username']) ? trim((string)$data['username']) : '');
         $email = isset($data['email']) ? trim((string)$data['email']) : '';
         $password = isset($data['password']) ? (string)$data['password'] : '';
 
@@ -74,6 +76,9 @@ try {
 
         $department = $pdo->query('SELECT id FROM departments WHERE status = 1 ORDER BY id LIMIT 1')->fetchColumn();
         $designation = $pdo->query('SELECT id FROM employee_designations WHERE status = 1 ORDER BY id LIMIT 1')->fetchColumn();
+        if ((int)$department <= 0 || (int)$designation <= 0) {
+            Json::error('Data department atau jabatan belum tersedia. Hubungi administrator.', 422);
+        }
 
         $pdo->beginTransaction();
         try {

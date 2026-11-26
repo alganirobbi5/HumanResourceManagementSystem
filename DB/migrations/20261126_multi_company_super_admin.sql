@@ -3,15 +3,14 @@ CREATE TABLE IF NOT EXISTS `companies` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
   `company_code` VARCHAR(50) NOT NULL,
   `company_name` VARCHAR(150) NOT NULL,
-  `address` TEXT NULL,
   `status` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_companies_code` (`company_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT IGNORE INTO `companies` (`id`, `company_code`, `company_name`, `address`, `status`)
-VALUES (1, 'DEFAULT', 'Perusahaan Default', '', 1);
+INSERT IGNORE INTO `companies` (`id`, `company_code`, `company_name`, `status`)
+VALUES (1, 'DEFAULT', 'Perusahaan Default', 1);
 
 DROP PROCEDURE IF EXISTS hris_multi_company_columns;
 DELIMITER $$

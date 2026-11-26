@@ -25,7 +25,7 @@ $profiles = new CompanyProfileService($pdo);
 try {
     if ($method === 'GET') {
         $rows = $pdo->query(
-            'SELECT c.id, c.company_code, c.address, c.status, c.created_at,
+            'SELECT c.id, c.company_code, c.status, c.created_at,
                     COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
              FROM companies c
              LEFT JOIN company_profile cp ON cp.company_id = c.id
@@ -38,9 +38,11 @@ try {
         $data = Json::readRequest();
         $code = isset($data['company_code']) ? trim((string)$data['company_code']) : '';
         $name = isset($data['company_name']) ? trim((string)$data['company_name']) : '';
-        $address = isset($data['address']) ? trim((string)$data['address']) : '';
         if ($code === '' || $name === '') {
             Json::error('company_code dan company_name wajib diisi', 422);
+        }
+        if (strlen($code) !== 8 || !preg_match('/^[A-Z]{3}-\d{4}$/', $code)) {
+            Json::error('Kode perusahaan harus 8 karakter dengan format CMJ-2026 (3 huruf, "-", 4 angka)', 422);
         }
         $exists = $pdo->prepare('SELECT id FROM companies WHERE company_code = ? LIMIT 1');
         $exists->execute(array($code));
@@ -50,11 +52,11 @@ try {
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'INSERT INTO companies (company_code, company_name, address, status) VALUES (?, ?, ?, 1)'
+                'INSERT INTO companies (company_code, company_name, status) VALUES (?, ?, 1)'
             );
-            $stmt->execute(array($code, $name, $address));
+            $stmt->execute(array($code, $name));
             $id = (int)$pdo->lastInsertId();
-            $profiles->upsert($id, $name, $code, $address);
+            $profiles->upsert($id, $name, $code);
             $pdo->commit();
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
@@ -63,7 +65,7 @@ try {
             throw $e;
         }
         $rowStmt = $pdo->prepare(
-            'SELECT c.id, c.company_code, c.address, c.status, c.created_at,
+            'SELECT c.id, c.company_code, c.status, c.created_at,
                     COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
              FROM companies c
              LEFT JOIN company_profile cp ON cp.company_id = c.id
@@ -98,7 +100,7 @@ try {
             Json::error('Perusahaan tidak ditemukan', 404);
         }
         $rowStmt = $pdo->prepare(
-            'SELECT c.id, c.company_code, c.address, c.status, c.created_at,
+            'SELECT c.id, c.company_code, c.status, c.created_at,
                     COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
              FROM companies c
              LEFT JOIN company_profile cp ON cp.company_id = c.id
