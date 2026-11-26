@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Config.php';
 
 class LeaveQuotaService
 {
@@ -73,10 +74,11 @@ class LeaveQuotaService
         return $defaults;
     }
 
-    private function insertQuotaRow($schema, $employeeId, $days)
+    private function insertQuotaRow($schema, $employeeId, $days, $totalDays = null)
     {
         $columns = array('employee_id', $schema['total'], $schema['remaining']);
-        $values = array((int)$employeeId, (float)$days, (float)$days);
+        $totalDays = $totalDays === null ? (float)$days : (float)$totalDays;
+        $values = array((int)$employeeId, $totalDays, $totalDays);
         if ($this->hasColumn($schema['table'], 'dedicated_leave')) {
             $columns[] = 'dedicated_leave';
             $values[] = 0;
@@ -94,9 +96,18 @@ class LeaveQuotaService
     public function employeesWithQuota()
     {
         $schema = $this->schema();
-        $totalExpr = $schema ? 'COALESCE(q.' . $schema['total'] . ', 12)' : '12';
-        $remainingExpr = $schema ? 'COALESCE(q.' . $schema['remaining'] . ', 12)' : '12';
-        $quotaJoin = $schema ? 'LEFT JOIN ' . $schema['table'] . ' q ON q.employee_id = e.id' : '';
+        $year = (int)Config::companyNow()->format('Y');
+        $useBalances = $this->hasTable('leave_balances');
+        if ($useBalances) {
+            $totalExpr = 'COALESCE(b.entitled_days, ' . Config::LEAVE_ENTITLEMENT_DEFAULT . ')';
+            $remainingExpr = 'COALESCE(b.entitled_days, ' . Config::LEAVE_ENTITLEMENT_DEFAULT . ') - COALESCE(b.used_days, 0)';
+            $quotaJoin = 'LEFT JOIN leave_balances b ON b.employee_id = e.id '
+                . 'AND b.leave_type = "' . Config::LEAVE_TYPE_DEFAULT . '" AND b.entitlement_year = ' . $year;
+        } else {
+            $totalExpr = $schema ? 'COALESCE(q.' . $schema['total'] . ', ' . Config::LEAVE_ENTITLEMENT_DEFAULT . ')' : (string)Config::LEAVE_ENTITLEMENT_DEFAULT;
+            $remainingExpr = $schema ? 'COALESCE(q.' . $schema['remaining'] . ', ' . Config::LEAVE_ENTITLEMENT_DEFAULT . ')' : (string)Config::LEAVE_ENTITLEMENT_DEFAULT;
+            $quotaJoin = $schema ? 'LEFT JOIN ' . $schema['table'] . ' q ON q.employee_id = e.id' : '';
+        }
         $hasDepartments = $this->hasTable('departments');
         $departmentExpr = $hasDepartments ? 'd.name AS department' : "'' AS department";
         $departmentJoin = $hasDepartments ? 'LEFT JOIN departments d ON d.id = e.department_id' : '';
@@ -129,8 +140,9 @@ class LeaveQuotaService
                     $schema['remaining'] . ' = ' . $schema['remaining'] . ' + ? WHERE employee_id = ?')
                     ->execute(array($days, $days, (int)$employeeId));
             } else {
-                $this->insertQuotaRow($schema, $employeeId, $days);
+                $this->insertQuotaRow($schema, $employeeId, $days, Config::LEAVE_ENTITLEMENT_DEFAULT + $days);
             }
+            $this->syncLeaveBalance($employeeId, $days);
             $this->pdo->commit();
             return true;
         } catch (Exception $e) {
@@ -138,6 +150,46 @@ class LeaveQuotaService
                 $this->pdo->rollBack();
             }
             throw $e;
+        }
+    }
+
+    /**
+     * Kuota yang dipakai saat pengajuan/disetujui berada di tabel
+     * leave_balances. Jadi penambahan dari menu HR harus masuk ke sana juga
+     * agar angka yang tampil di aplikasi benar-benar bertambah, bukan hanya
+     * mengubah tabel legacy employee_leavs.
+     */
+    private function syncLeaveBalance($employeeId, $days)
+    {
+        try {
+            if (!$this->hasTable('leave_balances')) {
+                return;
+            }
+            $year = (int)Config::companyNow()->format('Y');
+            $stmt = $this->pdo->prepare(
+                'SELECT id FROM leave_balances
+                 WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ? LIMIT 1'
+            );
+            $stmt->execute(array((int)$employeeId, Config::LEAVE_TYPE_DEFAULT, $year));
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                $this->pdo->prepare(
+                    'UPDATE leave_balances SET entitled_days = entitled_days + ?, updated_at = NOW() WHERE id = ?'
+                )->execute(array((float)$days, (int)$row['id']));
+                return;
+            }
+            $this->pdo->prepare(
+                'INSERT INTO leave_balances
+                    (employee_id, leave_type, entitlement_year, entitled_days, used_days)
+                 VALUES (?, ?, ?, ?, 0)'
+            )->execute(array(
+                (int)$employeeId,
+                Config::LEAVE_TYPE_DEFAULT,
+                $year,
+                Config::LEAVE_ENTITLEMENT_DEFAULT + (float)$days,
+            ));
+        } catch (PDOException $e) {
+            // Tabel leave_balances opsional; jangan gagalkan update kuota legacy.
         }
     }
 
