@@ -31,10 +31,16 @@ class EmployeeAccountService
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    private function masterRow($table, $id)
+    private function masterRow($table, $id, $companyId = null)
     {
-        $stmt = $this->pdo->prepare('SELECT id FROM ' . $table . ' WHERE id = ? AND status = 1 LIMIT 1');
-        $stmt->execute([(int)$id]);
+        $sql = 'SELECT id FROM ' . $table . ' WHERE id = ? AND status = 1';
+        $params = array((int)$id);
+        if ($companyId !== null) {
+            $sql .= ' AND company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
+        $stmt->execute($params);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
@@ -128,12 +134,12 @@ class EmployeeAccountService
             throw new InvalidArgumentException('mobile_no wajib diisi (maksimal 15 karakter)');
         }
         if (!ctype_digit($departmentId) || (int)$departmentId <= 0
-            || !$this->masterRow('departments', $departmentId)) {
+            || !$this->masterRow('departments', $departmentId, $companyId)) {
             throw new InvalidArgumentException('department_id tidak valid');
         }
         $designationTable = $this->hasTable('employee_designations') ? 'employee_designations' : 'designations';
         if (!ctype_digit($designationId) || (int)$designationId <= 0
-            || !$this->masterRow($designationTable, $designationId)) {
+            || !$this->masterRow($designationTable, $designationId, $companyId)) {
             throw new InvalidArgumentException('designation_id tidak valid');
         }
         if (!ctype_digit($status) || !in_array((int)$status, array(0, 1), true)) {
@@ -239,10 +245,22 @@ class EmployeeAccountService
 
     public function update($employeeId, array $data)
     {
-        $stmt = $this->pdo->prepare('SELECT id FROM employees WHERE id = ? LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, company_id FROM employees WHERE id = ? LIMIT 1');
         $stmt->execute([(int)$employeeId]);
-        if (!$stmt->fetch()) {
+        $employee = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$employee) {
             throw new InvalidArgumentException('Karyawan tidak ditemukan', 404);
+        }
+        $companyId = $employee['company_id'] !== null ? (int)$employee['company_id'] : null;
+        if (array_key_exists('department_id', $data)
+            && !$this->masterRow('departments', $data['department_id'], $companyId)) {
+            throw new InvalidArgumentException('Department tidak valid untuk perusahaan ini', 422);
+        }
+        if (array_key_exists('designation_id', $data)) {
+            $designationTable = $this->hasTable('employee_designations') ? 'employee_designations' : 'designations';
+            if (!$this->masterRow($designationTable, $data['designation_id'], $companyId)) {
+                throw new InvalidArgumentException('Jabatan tidak valid untuk perusahaan ini', 422);
+            }
         }
 
         $fields = array();
@@ -266,7 +284,12 @@ class EmployeeAccountService
         try {
             if ($fields) {
                 $params[] = (int)$employeeId;
-                $this->pdo->prepare('UPDATE employees SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
+                $updateSql = 'UPDATE employees SET ' . implode(', ', $fields) . ' WHERE id = ?';
+                if ($companyId !== null) {
+                    $updateSql .= ' AND company_id = ?';
+                    $params[] = $companyId;
+                }
+                $this->pdo->prepare($updateSql)->execute($params);
             }
             $user = $this->userByEmployeeId($employeeId);
             if ($user) {

@@ -23,6 +23,7 @@ $payload = array(
     'gender' => isset($data['gender']) ? $data['gender'] : 'L',
     'department_id' => isset($data['department']) ? $data['department'] : (isset($data['department_id']) ? $data['department_id'] : 0),
     'designation_id' => isset($data['designation']) ? $data['designation'] : (isset($data['designation_id']) ? $data['designation_id'] : 0),
+    'company_id' => Auth::companyId(),
 );
 
 try {

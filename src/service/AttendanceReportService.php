@@ -33,12 +33,18 @@ class AttendanceReportService
         return null;
     }
 
-    private function jamMasukKerja()
+    private function jamMasukKerja($companyId = null)
     {
         if (!$this->hasTable('pengaturan_jam')) {
             return null;
         }
-        $row = $this->pdo->query('SELECT jam_masuk FROM pengaturan_jam LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+        if ($companyId !== null) {
+            $stmt = $this->pdo->prepare('SELECT jam_masuk FROM pengaturan_jam WHERE company_id = ? ORDER BY id LIMIT 1');
+            $stmt->execute(array((int)$companyId));
+        } else {
+            $stmt = $this->pdo->query('SELECT jam_masuk FROM pengaturan_jam ORDER BY id LIMIT 1');
+        }
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row || empty($row['jam_masuk'])) {
             return null;
         }
@@ -47,7 +53,7 @@ class AttendanceReportService
 
     private function employeeRows($companyId = null)
     {
-        $jamMasukKerja = $this->jamMasukKerja();
+        $jamMasukKerja = $this->jamMasukKerja($companyId);
         $columns = array('a.id', 'a.employee_id', 'a.date', 'a.clock_in', 'a.clock_out',
             'a.total_work', 'a.status', 'a.latitude', 'a.longitude');
         foreach (array('gps_accuracy', 'selfie_path', 'selfie_out_path') as $column) {

@@ -14,6 +14,7 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../service/CompanyProfileService.php';
+require_once __DIR__ . '/../service/CompanyMasterService.php';
 
 Auth::requireApiSuperAdmin();
 
@@ -21,6 +22,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $profiles = new CompanyProfileService($pdo);
+$master = new CompanyMasterService($pdo);
 
 try {
     if ($method === 'GET') {
@@ -72,8 +74,8 @@ try {
             Json::error('Username sudah digunakan', 409);
         }
 
-        $department = $pdo->query('SELECT id FROM departments WHERE status = 1 ORDER BY id LIMIT 1')->fetchColumn();
-        $designation = $pdo->query('SELECT id FROM employee_designations WHERE status = 1 ORDER BY id LIMIT 1')->fetchColumn();
+        $department = $master->firstDepartment($companyId);
+        $designation = $master->firstDesignation($companyId);
 
         $pdo->beginTransaction();
         try {

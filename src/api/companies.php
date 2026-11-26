@@ -14,6 +14,7 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../service/CompanyProfileService.php';
+require_once __DIR__ . '/../service/CompanyMasterService.php';
 
 Auth::requireApiSuperAdmin();
 
@@ -21,6 +22,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $profiles = new CompanyProfileService($pdo);
+$master = new CompanyMasterService($pdo);
 
 try {
     if ($method === 'GET') {
@@ -55,6 +57,7 @@ try {
             $stmt->execute(array($code, $name, $address));
             $id = (int)$pdo->lastInsertId();
             $profiles->upsert($id, $name, $code, $address);
+            $master->initialize($id);
             $pdo->commit();
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {

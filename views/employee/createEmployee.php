@@ -7,12 +7,19 @@ if(!isset($_SESSION['admin_name']) && !isset($_SESSION['password'])) {
 }
 
 include '../../src/common/DBConnection.php';
+require_once '../../src/common/Auth.php';
+require_once '../../src/service/CompanyMasterService.php';
 
 $conn=new DBConnection();
 
-$departments=$conn->getAll("SELECT * FROM `departments`");
+$master = new CompanyMasterService($conn->getPdo());
+$companyId = Auth::companyId();
+if ($companyId === null) {
+    $companyId = 1;
+}
+$departments=$master->departments($companyId);
 
-$designations=$conn->getAll("SELECT * FROM `employee_designations`");
+$designations=$master->designations($companyId);
 
 ?>
 

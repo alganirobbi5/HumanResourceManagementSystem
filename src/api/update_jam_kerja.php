@@ -1,8 +1,12 @@
 <?php
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Auth.php';
+require_once __DIR__ . '/../service/CompanyMasterService.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
+
+Auth::requireApiHr();
 
 $data = json_decode(file_get_contents("php://input"));
 
@@ -10,15 +14,15 @@ if (!empty($data->jam_masuk) && !empty($data->jam_keluar)) {
     try {
         $pdo = DBConnection::pdo();
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        
-        $stmt = $pdo->prepare("UPDATE pengaturan_jam SET jam_masuk = ?, jam_keluar = ? WHERE id = 1");
-        $stmt->execute([$data->jam_masuk, $data->jam_keluar]);
-        
+        $master = new CompanyMasterService($pdo);
+        $master->saveJam(Auth::companyId(), $data->jam_masuk, $data->jam_keluar);
+
         echo json_encode(["status" => "success", "message" => "Jam kerja berhasil diubah"]);
     } catch (PDOException $e) {
-        echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => "Gagal menyimpan jam kerja"]);
     }
 } else {
+    http_response_code(400);
     echo json_encode(["status" => "error", "message" => "Data tidak lengkap"]);
 }
-?>

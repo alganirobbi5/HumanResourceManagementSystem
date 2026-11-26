@@ -12,25 +12,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
+require_once __DIR__ . '/../service/CompanyMasterService.php';
 
 $user = Auth::requireApi();
 
 $db = new DBConnection();
 
 if (isset($_GET['meta']) && (string)$_GET['meta'] === '1') {
-    $designationTable = 'employee_designations';
-    $designationColumn = 'title';
-    if (!$db->getPdo()->query("SHOW TABLES LIKE 'employee_designations'")->fetchColumn()
-        && $db->getPdo()->query("SHOW TABLES LIKE 'designations'")->fetchColumn()) {
-        $designationTable = 'designations';
-        $designationColumn = 'name';
-    }
+    $master = new CompanyMasterService($db->getPdo());
+    $companyId = Auth::companyId();
     $departments = array();
-    foreach ($db->selectAll('SELECT id, name FROM departments WHERE status = 1 ORDER BY name, id') as $row) {
+    foreach ($master->departments($companyId) as $row) {
         $departments[] = array('id' => (int)$row['id'], 'name' => (string)$row['name']);
     }
     $designations = array();
-    foreach ($db->selectAll("SELECT id, $designationColumn AS name FROM $designationTable WHERE status = 1 ORDER BY $designationColumn, id") as $row) {
+    foreach ($master->designations($companyId) as $row) {
         $designations[] = array('id' => (int)$row['id'], 'name' => (string)$row['name']);
     }
     Json::ok('OK', array(
