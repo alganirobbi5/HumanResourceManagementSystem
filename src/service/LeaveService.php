@@ -349,16 +349,22 @@ class LeaveService
         );
     }
 
-    public function pending($page = 1, $perPage = 10)
+    public function pending($page = 1, $perPage = 10, $leaderUserId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(50, max(1, (int)$perPage));
         $offset = ($page - 1) * $perPage;
 
-        $totalRow = $this->db->selectOne("SELECT COUNT(id) AS total FROM leave_requests WHERE status = 'pending'");
+        $leaderFilter = $leaderUserId ? ' AND leader_user_id = ?' : '';
+        $leaderParams = $leaderUserId ? array((int)$leaderUserId) : array();
+        $totalRow = $this->db->selectOne(
+            "SELECT COUNT(id) AS total FROM leave_requests WHERE status = 'pending'" . $leaderFilter,
+            $leaderParams
+        );
         $rows = $this->db->selectAll(
-            $this->baseSelect(" WHERE lr.status = 'pending'")
-            . ' ORDER BY lr.submitted_at ASC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset
+            $this->baseSelect(" WHERE lr.status = 'pending'" . $leaderFilter)
+            . ' ORDER BY lr.submitted_at ASC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset,
+            $leaderParams
         );
 
         return array(
@@ -369,7 +375,7 @@ class LeaveService
         );
     }
 
-    public function all($filters = array(), $page = 1, $perPage = 10)
+    public function all($filters = array(), $page = 1, $perPage = 10, $leaderUserId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(50, max(1, (int)$perPage));
@@ -377,6 +383,10 @@ class LeaveService
 
         $where = array();
         $params = array();
+        if ($leaderUserId) {
+            $where[] = 'lr.leader_user_id = ?';
+            $params[] = (int)$leaderUserId;
+        }
         if (!empty($filters['status']) && in_array($filters['status'], array('pending', 'approved', 'rejected'), true)) {
             $where[] = 'lr.status = ?';
             $params[] = $filters['status'];

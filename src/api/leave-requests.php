@@ -4,25 +4,30 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/Config.php';
 require_once __DIR__ . '/../service/LeaveService.php';
+require_once __DIR__ . '/../service/LeaveLeaderService.php';
 require_once __DIR__ . '/../service/RateLimiter.php';
 
 $user = Auth::requireApi();
 $method = $_SERVER['REQUEST_METHOD'];
 $service = new LeaveService();
+$leaderService = new LeaveLeaderService();
+$userId = Auth::userId();
+$isHr = ($user['role'] === 'hr');
+$leaderUserId = $isHr ? null : ($leaderService->isLeader($userId) ? $userId : null);
 
 if ($method === 'GET') {
     $scope = isset($_GET['scope']) ? $_GET['scope'] : 'me';
     $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 
     if ($scope === 'pending') {
-        if ($user['role'] !== 'hr') {
+        if (!$isHr && !$leaderUserId) {
             Json::error('Anda tidak memiliki izin melihat daftar persetujuan cuti', 403);
         }
-        Json::ok('OK', $service->pending($page));
+        Json::ok('OK', $service->pending($page, 10, $leaderUserId));
     }
 
     if ($scope === 'all') {
-        if ($user['role'] !== 'hr') {
+        if (!$isHr && !$leaderUserId) {
             Json::error('Anda tidak memiliki izin melihat seluruh pengajuan cuti', 403);
         }
         $filters = array();
@@ -32,7 +37,7 @@ if ($method === 'GET') {
         if (!empty($_GET['keyword'])) {
             $filters['keyword'] = trim($_GET['keyword']);
         }
-        Json::ok('OK', $service->all($filters, $page));
+        Json::ok('OK', $service->all($filters, $page, 10, $leaderUserId));
     }
 
     if ($scope === 'detail') {
@@ -42,7 +47,9 @@ if ($method === 'GET') {
             Json::error('Pengajuan cuti tidak ditemukan', 404);
         }
         $isOwner = $row['employee_id'] == $user['employee_id'];
-        if (!$isOwner && $user['role'] !== 'hr') {
+        $isAssignedLeader = $leaderUserId && !empty($row['leader_user_id'])
+            && (int)$row['leader_user_id'] === $leaderUserId;
+        if (!$isOwner && !$isHr && !$isAssignedLeader) {
             Json::error('Anda tidak dapat melihat pengajuan milik karyawan lain', 403);
         }
         Json::ok('OK', array('data' => $row));

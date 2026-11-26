@@ -6,8 +6,13 @@ header("Content-Type: application/json; charset=UTF-8");
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
+require_once __DIR__ . '/../service/LeaveLeaderService.php';
 
-$user = Auth::requireApiHr();
+$user = Auth::requireApi();
+$userId = Auth::userId();
+$isHr = Auth::isHr();
+$leaders = new LeaveLeaderService();
+$isLeader = !$isHr && $leaders->isLeader($userId);
 
 $bulan = isset($_GET['bulan']) && $_GET['bulan'] !== ''
     ? (int) $_GET['bulan']
@@ -47,6 +52,18 @@ try {
         $deletedFilter = '';
     }
 
+    $scopeFilter = '';
+    $params = array($bulan, $tahun);
+    $leaderColumn = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'leader_user_id'");
+    $hasLeaderColumn = $leaderColumn && $leaderColumn->fetch();
+    if (!$isHr && $isLeader && $hasLeaderColumn) {
+        $scopeFilter = ' AND leader_user_id = ?';
+        $params[] = $userId;
+    } elseif (!$isHr && $user['employee_id'] !== null) {
+        $scopeFilter = ' AND employee_id = ?';
+        $params[] = (int)$user['employee_id'];
+    }
+
     $stmt = $pdo->prepare(
         "SELECT
             COUNT(*) AS total,
@@ -56,9 +73,9 @@ try {
          FROM leaves
          WHERE MONTH(FROM_UNIXTIME(created_at)) = ?
            AND YEAR(FROM_UNIXTIME(created_at)) = ?
-           $deletedFilter"
+           $deletedFilter $scopeFilter"
     );
-    $stmt->execute(array($bulan, $tahun));
+    $stmt->execute($params);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     $labelBulan = date('F', mktime(0, 0, 0, $bulan, 1, $tahun)) . ' ' . $tahun;

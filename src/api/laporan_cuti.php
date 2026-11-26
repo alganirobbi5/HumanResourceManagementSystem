@@ -42,6 +42,21 @@ try {
 }
 $where = ($hasDeletedAt ? " WHERE l.deleted_at IS NULL" : " WHERE 1=1") . $where;
 
+// Leader hanya melihat pengajuan yang ditujukan kepadanya; HR melihat semua.
+if (!$isHr && $isLeader) {
+    $hasLeaderColumn = false;
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'leader_user_id'");
+        $hasLeaderColumn = $col && $col->fetch() !== false;
+    } catch (PDOException $e) {
+        $hasLeaderColumn = false;
+    }
+    if ($hasLeaderColumn) {
+        $where .= " AND l.leader_user_id = ?";
+        $params[] = (int)Auth::userId();
+    }
+}
+
 // Kolom opsional; tetap kompatibel jika migrasi belum dijalankan.
 $hasReason = false;
 $hasComment = false;
@@ -104,7 +119,7 @@ $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 http_response_code(200);
 echo json_encode([
     "success" => true,
-    "message" => "Laporan cuti seluruh karyawan",
+    "message" => $isHr ? "Laporan cuti seluruh karyawan" : "Laporan cuti yang ditujukan kepada Leader",
     "data" => $data
 ]);
 exit;
