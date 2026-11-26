@@ -17,11 +17,12 @@ require_once __DIR__ . '/../service/LeaveLeaderService.php';
 $user = Auth::requireApi();
 $service = new LeaveLeaderService();
 $method = $_SERVER['REQUEST_METHOD'];
+$companyId = Auth::companyId();
 
 if ($method === 'GET') {
-    $data = array('leaders' => $service->listLeaders());
+    $data = array('leaders' => $service->listLeaders($companyId));
     if (!empty($_GET['eligible']) && (string)$_GET['eligible'] === '1' && Auth::isHr()) {
-        $data['eligible_users'] = $service->listEligibleUsers();
+        $data['eligible_users'] = $service->listEligibleUsers($companyId);
     }
     Json::ok('OK', $data);
 }
@@ -42,7 +43,7 @@ if ($method === 'POST' || $method === 'DELETE') {
             if (!$target) {
                 Json::error('id atau user_id wajib diisi', 400);
             }
-            $service->removeLeader($target);
+            $service->removeLeader($target, $companyId);
             Json::ok('Leader berhasil dihapus');
         }
 
@@ -56,7 +57,7 @@ if ($method === 'POST' || $method === 'DELETE') {
             Json::error('jabatan wajib diisi', 422);
         }
         Json::ok('Leader berhasil ditambahkan', array(
-            'data' => $service->addLeader($targetUserId, (int)$hr['id'], $keterangan, $jabatan)
+            'data' => $service->addLeader($targetUserId, (int)$hr['id'], $keterangan, $jabatan, $companyId)
         ));
     } catch (InvalidArgumentException $e) {
         Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);

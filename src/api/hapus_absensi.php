@@ -16,7 +16,8 @@ require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/Config.php';
 
 // Hanya HR yang boleh menghapus data absensi.
-Auth::requireApiHr();
+$hr = Auth::requireApiHr();
+$companyId = Auth::companyId();
 
 $data = json_decode(file_get_contents("php://input"));
 $id = isset($data->id) ? (int)$data->id : 0;
@@ -33,6 +34,13 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     if ($recordType === 'admin') {
+        if ($companyId !== null) {
+            $adminCheck = $pdo->prepare('SELECT id FROM admin_attendances WHERE id = ? AND company_id = ? LIMIT 1');
+            $adminCheck->execute(array($id, $companyId));
+            if (!$adminCheck->fetch()) {
+                Json::error('Data absensi HR tidak ditemukan', 404);
+            }
+        }
         require_once __DIR__ . '/../service/AdminAttendanceService.php';
         $service = new AdminAttendanceService();
         $paths = $service->selfiePaths($id);
@@ -50,8 +58,14 @@ try {
             $columns[] = $column;
         }
     }
-    $stmt = $pdo->prepare('SELECT ' . implode(', ', $columns) . ' FROM attendances WHERE id = ? LIMIT 1');
-    $stmt->execute(array($id));
+    $selectSql = 'SELECT ' . implode(', ', $columns) . ' FROM attendances WHERE id = ?';
+    $selectParams = array($id);
+    if ($companyId !== null) {
+        $selectSql .= ' AND company_id = ?';
+        $selectParams[] = (int)$companyId;
+    }
+    $stmt = $pdo->prepare($selectSql . ' LIMIT 1');
+    $stmt->execute($selectParams);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
         Json::error('Data absensi tidak ditemukan', 404);
@@ -73,14 +87,26 @@ try {
                 $clear[] = $column . ' = NULL';
             }
         }
-        $stmt = $pdo->prepare("UPDATE attendances SET " . implode(', ', $clear) . " WHERE id = ? AND deleted_at IS NULL");
-        $stmt->execute(array($id));
+        $clearSql = "UPDATE attendances SET " . implode(', ', $clear) . " WHERE id = ? AND deleted_at IS NULL";
+        $clearParams = array($id);
+        if ($companyId !== null) {
+            $clearSql .= ' AND company_id = ?';
+            $clearParams[] = (int)$companyId;
+        }
+        $stmt = $pdo->prepare($clearSql);
+        $stmt->execute($clearParams);
         if ($stmt->rowCount() === 0) {
             Json::error('Data absensi sudah dihapus', 404);
         }
     } else {
-        $stmt = $pdo->prepare("DELETE FROM attendances WHERE id = ?");
-        $stmt->execute(array($id));
+        $deleteSql = 'DELETE FROM attendances WHERE id = ?';
+        $deleteParams = array($id);
+        if ($companyId !== null) {
+            $deleteSql .= ' AND company_id = ?';
+            $deleteParams[] = (int)$companyId;
+        }
+        $stmt = $pdo->prepare($deleteSql);
+        $stmt->execute($deleteParams);
     }
 
     hapusFileSelfie($paths);

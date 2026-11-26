@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Auth.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -8,6 +9,9 @@ header("Content-Type: application/json; charset=UTF-8");
 // karyawan). Flutter membaca daftar pengumuman tanpa Bearer Token, sehingga
 // autentikasi tidak diterapkan di sini agar tidak memutus fitur yang sudah
 // berjalan. Endpoint tulis (tambah/edit/hapus) telah dilindungi HR.
+
+$user = Auth::requireApi();
+$companyId = Auth::companyId();
 
 try {
     $pdo = DBConnection::pdo();
@@ -30,7 +34,15 @@ try {
         ? "SELECT id, subject AS title, description AS message, notice_date AS created_at, attachment FROM notices ORDER BY id DESC"
         : "SELECT id, subject AS title, description AS message, notice_date AS created_at FROM notices ORDER BY id DESC";
 
-    $stmt = $pdo->query($select);
+    $params = array();
+    if ($companyId !== null) {
+        $select = str_replace(' FROM notices ORDER BY', ' WHERE company_id = ? OR company_id IS NULL ORDER BY', $select);
+        $params[] = (int)$companyId;
+    } else {
+        $select = str_replace(' FROM notices ORDER BY', ' WHERE company_id IS NULL ORDER BY', $select);
+    }
+    $stmt = $pdo->prepare($select);
+    $stmt->execute($params);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode([

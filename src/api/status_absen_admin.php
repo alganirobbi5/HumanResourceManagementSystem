@@ -22,7 +22,7 @@ $tanggal = isset($_GET['date']) ? trim((string)$_GET['date']) : null;
 
 try {
     $service = new AdminAttendanceService();
-    Json::ok('OK', array('data' => $service->status($adminId, $tanggal)));
+    Json::ok('OK', array('data' => $service->status($adminId, $tanggal, Auth::companyId())));
 } catch (InvalidArgumentException $e) {
     Json::error($e->getMessage(), 422);
 } catch (Exception $e) {

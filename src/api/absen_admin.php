@@ -32,7 +32,7 @@ $selfie = isset($data['selfie']) ? $data['selfie'] : null;
 
 try {
     $service = new AdminAttendanceService();
-    $status = $service->checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId, $selfie);
+    $status = $service->checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId, $selfie, Auth::companyId());
     http_response_code(201);
     echo json_encode([
         'success' => true,

@@ -11,7 +11,7 @@ if (!$user['employee_id']) {
 }
 
 $service = new LeaveService();
-$balance = $service->getBalance($user['employee_id']);
+$balance = $service->getBalance($user['employee_id'], null, Auth::companyId());
 
 Json::ok('OK', array(
     'data' => array(

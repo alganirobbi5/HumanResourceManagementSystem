@@ -41,6 +41,7 @@ if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
 try {
     $service = new AttendanceReportService(DBConnection::get());
     $data = $service->all(array(
+        'company_id' => Auth::companyId(),
         'tanggal' => $tanggal,
         'start_date' => $startDate,
         'end_date' => $endDate,

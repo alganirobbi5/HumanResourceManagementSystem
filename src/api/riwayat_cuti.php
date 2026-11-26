@@ -16,13 +16,14 @@ $isHr = (isset($user['role']) && $user['role'] === 'hr');
 $scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : 'me';
 $leaders = new LeaveLeaderService();
 $service = new LeaveService();
+$companyId = Auth::companyId();
 
 if ($scope === 'leader') {
-    if (!$leaders->isLeader((int)$user['id'])) {
+    if (!$leaders->isLeader((int)$user['id'], $companyId)) {
         Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
     }
     Json::ok('Pengajuan cuti yang ditujukan kepada Anda', array(
-        'data' => $service->listLeaves('leader', (int)$user['id'])
+        'data' => $service->listLeaves('leader', (int)$user['id'], $companyId)
     ));
 }
 
@@ -30,23 +31,24 @@ if ($scope === 'all') {
     if (!$isHr) {
         Json::error('Anda tidak memiliki izin melihat seluruh pengajuan cuti', 403);
     }
-    Json::ok('Riwayat cuti seluruh karyawan', array('data' => $service->listLeaves('all')));
+    Json::ok('Riwayat cuti seluruh karyawan', array('data' => $service->listLeaves('all', null, $companyId)));
 }
 
 if ($employeeId !== null) {
     Json::ok('Riwayat cuti berhasil diambil', array(
-        'data' => $service->listLeaves('mine', (int)$employeeId)
+        'data' => $service->listLeaves('mine', (int)$employeeId, $companyId)
     ));
 }
 
-if ($leaders->isLeader((int)$user['id'])) {
+if ($leaders->isLeader((int)$user['id'], $companyId)) {
     Json::ok('Pengajuan cuti yang ditujukan kepada Anda', array(
-        'data' => $service->listLeaves('leader', (int)$user['id'])
+        'data' => $service->listLeaves('leader', (int)$user['id'], $companyId)
     ));
 }
 
 if ($isHr) {
-    Json::ok('Riwayat cuti seluruh karyawan', array('data' => $service->listLeaves('all')));
+    Json::ok('Riwayat cuti seluruh karyawan', array('data' => $service->listLeaves('all', null, $companyId)));
 }
 
 Json::error('Akun ini tidak terhubung ke data karyawan', 400);
+

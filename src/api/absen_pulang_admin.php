@@ -33,7 +33,7 @@ if (!isset($latitude, $longitude)) {
 
 try {
     $service = new AdminAttendanceService();
-    $status = $service->checkOut($adminId, $waktuLokal, $latitude, $longitude, $selfie);
+    $status = $service->checkOut($adminId, $waktuLokal, $latitude, $longitude, $selfie, Auth::companyId());
     Json::ok('Absen pulang Admin HR berhasil disimpan', array('data' => $status));
 } catch (InvalidArgumentException $e) {
     Json::error($e->getMessage(), 422);

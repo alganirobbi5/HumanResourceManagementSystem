@@ -19,6 +19,7 @@ $user = Auth::requireApi();
 $userId = Auth::userId();
 $service = new IzinKeluarService();
 $leaders = new LeaveLeaderService();
+$companyId = Auth::companyId();
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
@@ -26,28 +27,28 @@ if ($method === 'GET') {
     $status = isset($_GET['status']) ? trim((string)$_GET['status']) : null;
     $tanggal = isset($_GET['tanggal']) ? trim((string)$_GET['tanggal']) : null;
     $isHr = Auth::isHr();
-    $isLeader = $leaders->isLeader($userId);
+    $isLeader = $leaders->isLeader($userId, $companyId);
 
     if ($scope === 'leader') {
         if (!$isLeader) {
             Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
         }
-        Json::ok('OK', array('data' => $service->listForLeader($userId, $status, $tanggal)));
+        Json::ok('OK', array('data' => $service->listForLeader($userId, $status, $tanggal, $companyId)));
     }
 
     if ($scope === 'all') {
         if (!$isHr) {
             Json::error('Anda tidak memiliki izin melihat seluruh pengajuan izin keluar', 403);
         }
-        Json::ok('OK', array('data' => $service->listAll($status, $tanggal)));
+        Json::ok('OK', array('data' => $service->listAll($status, $tanggal, $companyId)));
     }
 
     if ($scope === 'mine' || $scope === 'me') {
         if ($user['employee_id']) {
-            Json::ok('OK', array('data' => $service->listByEmployee((int)$user['employee_id'], $status)));
+            Json::ok('OK', array('data' => $service->listByEmployee((int)$user['employee_id'], $status, $companyId)));
         }
         if ($isHr) {
-            Json::ok('OK', array('data' => $service->listAll($status, $tanggal)));
+            Json::ok('OK', array('data' => $service->listAll($status, $tanggal, $companyId)));
         }
         Json::error('Akun ini tidak terhubung ke data karyawan', 400);
     }
@@ -61,7 +62,7 @@ if ($method === 'POST') {
     }
     $data = Json::readRequest();
     try {
-        $row = $service->createRequest((int)$user['employee_id'], $data);
+        $row = $service->createRequest((int)$user['employee_id'], $data, $companyId);
         Json::ok('Pengajuan izin keluar berhasil disimpan dan menunggu persetujuan', array('data' => $row));
     } catch (InvalidArgumentException $e) {
         Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);
@@ -73,3 +74,4 @@ if ($method === 'POST') {
 }
 
 Json::error('Method tidak diizinkan', 405);
+

@@ -12,25 +12,26 @@ $method = $_SERVER['REQUEST_METHOD'];
 $service = new LeaveService();
 $leaders = new LeaveLeaderService();
 $userId = Auth::userId();
+$companyId = Auth::companyId();
 $isHr = ($user['role'] === 'hr');
-$leaderUserId = $isHr ? null : ($leaders->isLeader($userId) ? $userId : null);
+$leaderUserId = $isHr ? null : ($leaders->isLeader($userId, $companyId) ? $userId : null);
 
 if ($method === 'GET') {
     $scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : 'me';
     $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 
     if ($scope === 'leader') {
-        if (!$leaders->isLeader((int)$user['id'])) {
+        if (!$leaders->isLeader((int)$user['id'], $companyId)) {
             Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
         }
-        Json::ok('OK', $service->forLeader((int)$user['id'], $page));
+        Json::ok('OK', $service->forLeader((int)$user['id'], $page, 10, $companyId));
     }
 
     if ($scope === 'pending') {
         if (!$isHr && !$leaderUserId) {
             Json::error('Anda tidak memiliki izin melihat daftar persetujuan cuti', 403);
         }
-        Json::ok('OK', $service->pending($page, 10, $leaderUserId));
+        Json::ok('OK', $service->pending($page, 10, $leaderUserId, $companyId));
     }
 
     if ($scope === 'all') {
@@ -44,19 +45,19 @@ if ($method === 'GET') {
         if (!empty($_GET['keyword'])) {
             $filters['keyword'] = trim($_GET['keyword']);
         }
-        Json::ok('OK', $service->all($filters, $page, 10, $leaderUserId));
+        Json::ok('OK', $service->all($filters, $page, 10, $leaderUserId, $companyId));
     }
 
     if ($scope === 'detail') {
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-        $row = $service->detail($id);
+        $row = $service->detail($id, $companyId);
         if (!$row) {
             Json::error('Pengajuan cuti tidak ditemukan', 404);
         }
         $isOwner = $row['employee_id'] == $user['employee_id'];
         $isTargetLeader = !empty($row['leader_user_id'])
             && (int)$row['leader_user_id'] === (int)$user['id']
-            && $leaders->isLeader((int)$user['id']);
+            && $leaders->isLeader((int)$user['id'], $companyId);
         if (!$isOwner && !$isTargetLeader && $user['role'] !== 'hr') {
             Json::error('Anda tidak dapat melihat pengajuan milik karyawan lain', 403);
         }
@@ -66,7 +67,7 @@ if ($method === 'GET') {
     if (!$user['employee_id']) {
         Json::error('Akun ini tidak terhubung ke data karyawan', 400);
     }
-    Json::ok('OK', $service->mine($user['employee_id'], $page));
+    Json::ok('OK', $service->mine($user['employee_id'], $page, 10, $companyId));
 }
 
 if ($method === 'POST') {
@@ -91,7 +92,8 @@ if ($method === 'POST') {
                 isset($body['start_date']) ? $body['start_date'] : '',
                 isset($body['end_date']) ? $body['end_date'] : '',
                 isset($body['replacement_employee_id']) ? (int)$body['replacement_employee_id'] : 0,
-                isset($body['leader_user_id']) ? (int)$body['leader_user_id'] : 0
+                isset($body['leader_user_id']) ? (int)$body['leader_user_id'] : 0,
+                $companyId
             );
             Json::ok('Pengajuan cuti berhasil disimpan dan menunggu persetujuan', array('data' => $row));
         } catch (InvalidArgumentException $e) {
@@ -111,10 +113,10 @@ if ($method === 'POST') {
         try {
             $catatanLeader = isset($body['catatan_leader']) ? trim((string)$body['catatan_leader']) : null;
             if ($action === 'approve') {
-                $row = $service->approve($id, (int)$user['id'], $catatanLeader);
+                $row = $service->approve($id, (int)$user['id'], $catatanLeader, $companyId);
                 Json::ok('Pengajuan cuti disetujui', array('data' => $row));
             } else {
-                $row = $service->reject($id, (int)$user['id'], isset($body['rejection_reason']) ? $body['rejection_reason'] : '', $catatanLeader);
+                $row = $service->reject($id, (int)$user['id'], isset($body['rejection_reason']) ? $body['rejection_reason'] : '', $catatanLeader, $companyId);
                 Json::ok('Pengajuan cuti ditolak', array('data' => $row));
             }
         } catch (InvalidArgumentException $e) {
@@ -131,3 +133,4 @@ if ($method === 'POST') {
 }
 
 Json::error('Method tidak diizinkan', 405);
+

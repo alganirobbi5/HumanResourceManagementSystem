@@ -13,8 +13,9 @@ require_once __DIR__ . '/../service/LeaveLeaderService.php';
 $user = Auth::requireApi();
 $leaderService = new LeaveLeaderService();
 $leaderUserId = Auth::userId();
+$companyId = Auth::companyId();
 
-if (!$leaderService->isLeader($leaderUserId)) {
+if (!$leaderService->isLeader($leaderUserId, $companyId)) {
     Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
 }
 
@@ -41,8 +42,14 @@ try {
     $pdo = DBConnection::get();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    $stmt = $pdo->prepare('SELECT id, status, leader_user_id FROM leaves WHERE id = ? LIMIT 1 FOR UPDATE');
-    $stmt->execute([$leaveId]);
+    $selectSql = 'SELECT id, status, leader_user_id FROM leaves WHERE id = ?';
+    $selectParams = array($leaveId);
+    if ($companyId !== null) {
+        $selectSql .= ' AND company_id = ?';
+        $selectParams[] = (int)$companyId;
+    }
+    $stmt = $pdo->prepare($selectSql . ' LIMIT 1 FOR UPDATE');
+    $stmt->execute($selectParams);
     $leave = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$leave) {
         Json::error('Pengajuan cuti tidak ditemukan', 404);
@@ -55,7 +62,7 @@ try {
     }
 
     $now = Config::companyNow()->format('Y-m-d H:i:s');
-    $leaderName = $leaderService->leaderName($leaderUserId);
+    $leaderName = $leaderService->leaderName($leaderUserId, $companyId);
     $set = array('status = ?');
     $params = array($decision === 'approved' ? 2 : 3);
     $updatedAt = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'updated_at'");
@@ -82,7 +89,12 @@ try {
         $params[] = $value;
     }
     $params[] = $leaveId;
-    $pdo->prepare('UPDATE leaves SET ' . implode(', ', $set) . ' WHERE id = ?')->execute($params);
+    $updateSql = 'UPDATE leaves SET ' . implode(', ', $set) . ' WHERE id = ?';
+    if ($companyId !== null) {
+        $updateSql .= ' AND company_id = ?';
+        $params[] = (int)$companyId;
+    }
+    $pdo->prepare($updateSql)->execute($params);
 
     Json::ok('Status cuti berhasil diperbarui', array('data' => array(
         'leave_id' => $leaveId,

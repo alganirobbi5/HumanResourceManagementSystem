@@ -18,7 +18,7 @@ require_once __DIR__ . '/../service/LeaveLeaderService.php';
 $user = Auth::requireApi();
 $leaderUserId = (int)$user['id'];
 $leaders = new LeaveLeaderService();
-if (!$leaders->isLeader($leaderUserId)) {
+if (!$leaders->isLeader($leaderUserId, Auth::companyId())) {
     Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
 }
 
@@ -37,7 +37,7 @@ if (!in_array(strtolower($status), array('approved', 'rejected'), true)) {
 
 try {
     $service = new IzinKeluarService();
-    $row = $service->decide($id, $status, $leaderUserId, $catatan);
+    $row = $service->decide($id, $status, $leaderUserId, $catatan, Auth::companyId());
     Json::ok('Pengajuan izin keluar berhasil diproses', array('data' => $row));
 } catch (InvalidArgumentException $e) {
     Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);

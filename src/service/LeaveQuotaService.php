@@ -93,7 +93,7 @@ class LeaveQuotaService
             implode(', ', array_fill(0, count($values), '?')) . ')')->execute($values);
     }
 
-    public function employeesWithQuota()
+    public function employeesWithQuota($companyId = null)
     {
         $schema = $this->schema();
         $year = (int)Config::companyNow()->format('Y');
@@ -112,11 +112,19 @@ class LeaveQuotaService
         $departmentExpr = $hasDepartments ? 'd.name AS department' : "'' AS department";
         $departmentJoin = $hasDepartments ? 'LEFT JOIN departments d ON d.id = e.department_id' : '';
 
+        $where = '';
+        $params = array();
+        if ($companyId !== null) {
+            $where = ' WHERE e.company_id = ?';
+            $params[] = (int)$companyId;
+        }
         $sql = 'SELECT e.id AS employee_id, e.first_name, e.last_name, e.user_name AS username, ' .
             $departmentExpr . ', ' . $totalExpr . ' AS total_kuota, ' . $remainingExpr . ' AS sisa_kuota ' .
-            'FROM employees e ' . $departmentJoin . ' ' . $quotaJoin . ' ' .
+            'FROM employees e ' . $departmentJoin . ' ' . $quotaJoin . $where . ' ' .
             'ORDER BY e.first_name, e.last_name';
-        return $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function addDays($employeeId, $days)

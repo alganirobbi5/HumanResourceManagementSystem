@@ -16,6 +16,7 @@ require_once __DIR__ . '/../common/Json.php';
 
 // Hanya HR yang boleh menghapus pengumuman.
 $user = Auth::requireApiHr();
+$companyId = Auth::companyId();
 
 $data = json_decode(file_get_contents("php://input"));
 $id = isset($data->id) ? (int)$data->id : 0;
@@ -28,8 +29,14 @@ try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    $stmt = $pdo->prepare("DELETE FROM notices WHERE id = ?");
-    $stmt->execute([$id]);
+    $deleteSql = 'DELETE FROM notices WHERE id = ?';
+    $deleteParams = array($id);
+    if ($companyId !== null) {
+        $deleteSql .= ' AND (company_id = ? OR company_id IS NULL)';
+        $deleteParams[] = (int)$companyId;
+    }
+    $stmt = $pdo->prepare($deleteSql);
+    $stmt->execute($deleteParams);
 
     if ($stmt->rowCount() === 0) {
         Json::error('Pengumuman tidak ditemukan', 404);

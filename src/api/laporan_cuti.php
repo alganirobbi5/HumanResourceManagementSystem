@@ -12,7 +12,8 @@ require_once __DIR__ . '/../service/LeaveLeaderService.php';
 $user = Auth::requireApi();
 $leaderService = new LeaveLeaderService();
 $isHr = isset($user['role']) && $user['role'] === 'hr';
-$isLeader = $leaderService->isLeader(Auth::userId());
+$companyId = Auth::companyId();
+$isLeader = $leaderService->isLeader(Auth::userId(), $companyId);
 if (!$isHr && !$isLeader) {
     Json::error('Anda tidak memiliki izin melihat daftar pengajuan cuti', 403);
 }
@@ -55,6 +56,10 @@ if (!$isHr && $isLeader) {
         $where .= " AND l.leader_user_id = ?";
         $params[] = (int)Auth::userId();
     }
+}
+if ($companyId !== null) {
+    $where .= ' AND l.company_id = ?';
+    $params[] = (int)$companyId;
 }
 
 // Kolom opsional; tetap kompatibel jika migrasi belum dijalankan.

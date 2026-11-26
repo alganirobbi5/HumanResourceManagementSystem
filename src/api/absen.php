@@ -12,6 +12,7 @@ require_once __DIR__ . '/../service/AttendanceService.php';
 
 $user = Auth::requireApi();
 $employee_id = $user['employee_id'];
+$companyId = Auth::companyId();
 
 if (!$employee_id) {
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
@@ -113,8 +114,13 @@ $colDeleted = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
 if ($colDeleted && $colDeleted->fetch()) {
     $filterDeletedCek = ' AND deleted_at IS NULL';
 }
-$stmtCek = $pdo->prepare("SELECT id FROM attendances WHERE employee_id = ? AND date = ?$filterDeletedCek");
-$stmtCek->execute([$employee_id, $tanggal]);
+$cekParams = array($employee_id, $tanggal);
+if ($companyId !== null) {
+    $filterDeletedCek .= ' AND company_id = ?';
+    $cekParams[] = (int)$companyId;
+}
+$stmtCek = $pdo->prepare("SELECT id FROM attendances WHERE employee_id = ? AND date = ?$filterDeletedCek LIMIT 1");
+$stmtCek->execute($cekParams);
 if ($stmtCek->fetch()) {
     Json::error('Anda sudah melakukan absen hari ini.', 400);
 }
@@ -126,6 +132,10 @@ $columns = array(
 $values = array(
     $employee_id, $tanggal, $waktu_sekarang, '00:00:00', 0, 1, $lat, $lng,
 );
+if ($companyId !== null) {
+    $columns[] = 'company_id';
+    $values[] = (int)$companyId;
+}
 
 $selfie = AttendanceService::storeSelfie(
     isset($data['selfie']) ? $data['selfie'] : null,

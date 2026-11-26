@@ -10,6 +10,7 @@ require_once __DIR__ . '/../common/Config.php';
 
 $user = Auth::requireApi();
 $employee_id = $user['employee_id'];
+$companyId = Auth::companyId();
 
 if (!$employee_id) {
     $isHr = (isset($user['role']) && $user['role'] === 'hr');
@@ -17,7 +18,7 @@ if (!$employee_id) {
     if ($isHr && $adminId !== null) {
         require_once __DIR__ . '/../service/AdminAttendanceService.php';
         $service = new AdminAttendanceService();
-        $statusAdmin = $service->status($adminId, Config::companyToday());
+        $statusAdmin = $service->status($adminId, Config::companyToday(), $companyId);
         echo json_encode([
             "success" => true,
             "message" => "Status absensi Admin HR",
@@ -65,8 +66,13 @@ try {
 
 // HANYA ABSEN MILIK USER YANG TERLOGIN (dari session).
 // Baris yang sudah dihapus HR (soft delete) tidak boleh terbaca lagi.
+$statusParams = array($employee_id, $tanggal);
+if ($companyId !== null) {
+    $filterDeleted .= ' AND company_id = ?';
+    $statusParams[] = (int)$companyId;
+}
 $stmt = $pdo->prepare("SELECT id, clock_in, clock_out$selfieColumn FROM attendances WHERE employee_id = ? AND date = ?$filterDeleted ORDER BY id DESC LIMIT 1");
-$stmt->execute([$employee_id, $tanggal]);
+$stmt->execute($statusParams);
 $absen = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if ($absen) {

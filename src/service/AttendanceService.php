@@ -62,7 +62,7 @@ class AttendanceService
      * Simpan absensi karyawan. Identitas diambil dari parameter server-side,
      * bukan dari input frontend.
      */
-    public function create($employeeId, $latitude, $longitude, $gpsAccuracy, $requestId = null)
+    public function create($employeeId, $latitude, $longitude, $gpsAccuracy, $requestId = null, $companyId = null)
     {
         if (!$employeeId) {
             throw new InvalidArgumentException('Karyawan tidak valid');
@@ -94,54 +94,65 @@ class AttendanceService
         }
         if (Config::ONE_ATTENDANCE_PER_DAY) {
             $filter = $this->deletedFilter();
-            $dup = $this->db->selectOne(
-                'SELECT id FROM attendances WHERE employee_id = ? AND `date` = ?' .
-                ($filter ? ' AND ' . $filter : '') . ' LIMIT 1',
-                array((int)$employeeId, $today)
-            );
+            $dupSql = 'SELECT id FROM attendances WHERE employee_id = ? AND `date` = ?' .
+                ($filter ? ' AND ' . $filter : '');
+            $dupParams = array((int)$employeeId, $today);
+            if ($companyId !== null) {
+                $dupSql .= ' AND company_id = ?';
+                $dupParams[] = (int)$companyId;
+            }
+            $dup = $this->db->selectOne($dupSql . ' LIMIT 1', $dupParams);
             if ($dup) {
                 throw new RuntimeException('Anda sudah melakukan absensi hari ini');
             }
         }
 
+        $columns = 'employee_id, `date`, clock_in, latitude, longitude, gps_accuracy,
+                    status, request_id, created_at, modified_at';
+        $values = array(
+            (int)$employeeId,
+            $today,
+            $now->format('H:i:s'),
+            $latitude,
+            $longitude,
+            $gpsAccuracy !== null && $gpsAccuracy !== '' ? (float)$gpsAccuracy : null,
+            'recorded',
+            $requestId,
+            $now->format('Y-m-d H:i:s'),
+            $now->format('Y-m-d H:i:s')
+        );
+        if ($companyId !== null) {
+            $columns .= ', company_id';
+            $values[] = (int)$companyId;
+        }
         $id = $this->db->insert(
-            'INSERT INTO attendances
-                (employee_id, `date`, clock_in, latitude, longitude, gps_accuracy,
-                 status, request_id, created_at, modified_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            array(
-                (int)$employeeId,
-                $today,
-                $now->format('H:i:s'),
-                $latitude,
-                $longitude,
-                $gpsAccuracy !== null && $gpsAccuracy !== '' ? (float)$gpsAccuracy : null,
-                'recorded',
-                $requestId,
-                $now->format('Y-m-d H:i:s'),
-                $now->format('Y-m-d H:i:s')
-            )
+            'INSERT INTO attendances (' . $columns . ') VALUES (' .
+            implode(', ', array_fill(0, count($values), '?')) . ')',
+            $values
         );
 
-        return $this->find($id);
+        return $this->find($id, $companyId);
     }
 
-    public function find($id)
+    public function find($id, $companyId = null)
     {
         $filter = $this->deletedFilter('a');
-        return $this->db->selectOne(
-            'SELECT a.*, e.first_name, e.last_name, e.user_name AS employee_nik,
-                    d.name AS department_name, dg.title AS designation_name
-             FROM attendances a
-             LEFT JOIN employees e ON e.id = a.employee_id
-             LEFT JOIN departments d ON d.id = e.department_id
-             LEFT JOIN employee_designations dg ON dg.id = e.designation_id
-             WHERE a.id = ?' . ($filter ? ' AND ' . $filter : ''),
-            array((int)$id)
-        );
+        $sql = 'SELECT a.*, e.first_name, e.last_name, e.user_name AS employee_nik,
+                       d.name AS department_name, dg.title AS designation_name
+                FROM attendances a
+                LEFT JOIN employees e ON e.id = a.employee_id
+                LEFT JOIN departments d ON d.id = e.department_id
+                LEFT JOIN employee_designations dg ON dg.id = e.designation_id
+                WHERE a.id = ?' . ($filter ? ' AND ' . $filter : '');
+        $params = array((int)$id);
+        if ($companyId !== null) {
+            $sql .= ' AND a.company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        return $this->db->selectOne($sql, $params);
     }
 
-    public function mine($employeeId, $page = 1, $perPage = 10)
+    public function mine($employeeId, $page = 1, $perPage = 10, $companyId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(50, max(1, (int)$perPage));
@@ -149,21 +160,29 @@ class AttendanceService
 
         $filter = $this->deletedFilter();
         $where = 'employee_id = ?' . ($filter ? ' AND ' . $filter : '');
+        $params = array((int)$employeeId);
+        if ($companyId !== null) {
+            $where .= ' AND company_id = ?';
+            $params[] = (int)$companyId;
+        }
         $totalRow = $this->db->selectOne(
             'SELECT COUNT(id) AS total FROM attendances WHERE ' . $where,
-            array((int)$employeeId)
+            $params
         );
         $filterAlias = $this->deletedFilter('a');
+        $whereAlias = ' WHERE a.employee_id = ?' . ($filterAlias ? ' AND ' . $filterAlias : '');
+        if ($companyId !== null) {
+            $whereAlias .= ' AND a.company_id = ?';
+        }
         $rows = $this->db->selectAll(
             'SELECT a.id, a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude,
                     a.status, a.created_at' . $this->optionalAttendanceColumns() . ',
                     e.first_name, e.last_name
              FROM attendances a
-             LEFT JOIN employees e ON e.id = a.employee_id
-             WHERE a.employee_id = ?' . ($filterAlias ? ' AND ' . $filterAlias : '') . '
+             LEFT JOIN employees e ON e.id = a.employee_id' . $whereAlias . '
              ORDER BY a.`date` DESC, a.clock_in DESC
              LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset,
-            array((int)$employeeId)
+            $params
         );
 
         return array(
@@ -174,7 +193,7 @@ class AttendanceService
         );
     }
 
-    public function all($filters = array(), $page = 1, $perPage = 15)
+    public function all($filters = array(), $page = 1, $perPage = 15, $companyId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(100, max(1, (int)$perPage));
@@ -182,6 +201,10 @@ class AttendanceService
 
         $where = array();
         $params = array();
+        if ($companyId !== null) {
+            $where[] = 'a.company_id = ?';
+            $params[] = (int)$companyId;
+        }
 
         if (!empty($filters['date'])) {
             $where[] = 'a.`date` = ?';
@@ -244,8 +267,14 @@ class AttendanceService
     }
 
     /** Data untuk export: diambil dari database sesuai rentang tanggal. */
-    public function forExport($startDate, $endDate, $hrEmployeeId = null)
+    public function forExport($startDate, $endDate, $hrEmployeeId = null, $companyId = null)
     {
+        $where = ' WHERE a.`date` BETWEEN ? AND ?';
+        $params = array($startDate, $endDate);
+        if ($companyId !== null) {
+            $where .= ' AND a.company_id = ?';
+            $params[] = (int)$companyId;
+        }
         return $this->db->selectAll(
             'SELECT a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude, a.status,
                     e.first_name, e.last_name, e.user_name AS employee_nik,
@@ -253,10 +282,10 @@ class AttendanceService
              FROM attendances a
              LEFT JOIN employees e ON e.id = a.employee_id
              LEFT JOIN departments d ON d.id = e.department_id
-             LEFT JOIN employee_designations dg ON dg.id = e.designation_id
-             WHERE a.`date` BETWEEN ? AND ?
+             LEFT JOIN employee_designations dg ON dg.id = e.designation_id'
+            . $where . '
              ORDER BY e.first_name, e.last_name, a.clock_in',
-            array($startDate, $endDate)
+            $params
         );
     }
 }

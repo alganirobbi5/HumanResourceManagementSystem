@@ -69,18 +69,23 @@ class EmployeeAccountService
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    private function insertUser($employeeId, $username, $password, $isActive = 1)
+    private function insertUser($employeeId, $username, $password, $isActive = 1, $companyId = null)
     {
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO users (employee_id, username, password_hash, role, is_active)
-             VALUES (?, ?, ?, \'employee\', ?)'
-        );
-        $stmt->execute(array(
+        $columns = 'employee_id, username, password_hash, role, is_active';
+        $values = array(
             (int)$employeeId,
             $username,
             password_hash((string)$password, PASSWORD_BCRYPT),
+            'employee',
             (int)$isActive ? 1 : 0
-        ));
+        );
+        if ($this->hasColumn('users', 'company_id')) {
+            $columns .= ', company_id';
+            $values[] = $companyId !== null ? (int)$companyId : null;
+        }
+        $stmt = $this->pdo->prepare('INSERT INTO users (' . $columns . ') VALUES (' .
+            implode(', ', array_fill(0, count($values), '?')) . ')');
+        $stmt->execute($values);
         return (int)$this->pdo->lastInsertId();
     }
 
@@ -98,6 +103,8 @@ class EmployeeAccountService
         $designationId = isset($data['designation_id']) ? (string)$data['designation_id'] : '';
         $status = isset($data['status']) ? (string)$data['status'] : '1';
         $createBy = isset($data['create_by']) ? trim((string)$data['create_by']) : null;
+        $companyId = isset($data['company_id']) && $data['company_id'] !== null && $data['company_id'] !== ''
+            ? (int)$data['company_id'] : null;
 
         if ($firstName === '' || strlen($firstName) > 30) {
             throw new InvalidArgumentException('first_name wajib diisi (maksimal 30 karakter)');
@@ -148,6 +155,10 @@ class EmployeeAccountService
             $columns[] = 'created_date';
             $values[] = date('Y-m-d H:i:s');
         }
+        if ($this->hasColumn('employees', 'company_id')) {
+            $columns[] = 'company_id';
+            $values[] = $companyId;
+        }
 
         $this->pdo->beginTransaction();
         try {
@@ -156,7 +167,7 @@ class EmployeeAccountService
             $this->pdo->prepare($sql)->execute($values);
             $employeeId = (int)$this->pdo->lastInsertId();
 
-            $this->insertUser($employeeId, $username, $password, (int)$status);
+            $this->insertUser($employeeId, $username, $password, (int)$status, $companyId);
             $quota = new LeaveQuotaService($this->pdo);
             $quota->ensureForEmployee($employeeId, 12);
             $this->pdo->commit();

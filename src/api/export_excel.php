@@ -1,6 +1,10 @@
 <?php
 // Panggil koneksi database
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../common/Auth.php';
+
+$user = Auth::requireApi();
+$companyId = Auth::companyId();
 
 try {
     $pdo = DBConnection::pdo();
@@ -15,6 +19,13 @@ try {
     } catch (PDOException $e) {
         $deletedFilter = '';
     }
+    $params = array();
+    if ($companyId !== null) {
+        $deletedFilter = $deletedFilter === ''
+            ? ' WHERE a.company_id = ?'
+            : $deletedFilter . ' AND a.company_id = ?';
+        $params[] = (int)$companyId;
+    }
     $query = "SELECT a.date, a.clock_in, a.clock_out, a.status,
                      e.first_name, e.last_name
               FROM attendances a
@@ -22,7 +33,8 @@ try {
               $deletedFilter
               ORDER BY a.date DESC";
 
-    $stmt = $pdo->query($query);
+    $stmt = $pdo->prepare($query);
+    $stmt->execute($params);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Set header agar browser mendownload sebagai file CSV (bisa dibuka di Excel)

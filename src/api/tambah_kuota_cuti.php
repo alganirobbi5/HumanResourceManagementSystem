@@ -30,7 +30,7 @@ if ($employeeId <= 0 || $days <= 0) {
 
 try {
     $service = new LeaveService();
-    $balance = $service->addEntitlement($employeeId, $days, $year);
+    $balance = $service->addEntitlement($employeeId, $days, $year, Auth::companyId());
 
     Json::ok('Kuota cuti berhasil ditambahkan', array(
         'data' => array(

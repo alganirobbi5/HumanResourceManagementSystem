@@ -31,6 +31,7 @@ $payload = array(
     'designation_id' => isset($data['designation_id']) ? $data['designation_id'] : (isset($data['designation']) ? $data['designation'] : 0),
     'status' => isset($data['status']) ? $data['status'] : 1,
     'create_by' => isset($hr['username']) ? $hr['username'] : null,
+    'company_id' => Auth::companyId(),
 );
 
 try {

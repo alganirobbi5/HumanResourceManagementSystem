@@ -11,8 +11,11 @@ Json::ok('OK', array(
         'id' => (int)$user['id'],
         'username' => $user['username'],
         'role' => $user['role'],
+        'company_id' => Auth::companyId(),
+        'company_code' => Auth::companyCode(),
+        'company_name' => Auth::companyName(),
         'display_name' => $user['display_name'],
-        'is_leave_leader' => (new LeaveLeaderService())->isLeader((int)$user['id']),
+        'is_leave_leader' => (new LeaveLeaderService())->isLeader((int)$user['id'], Auth::companyId()),
         'employee' => $user['employee_id'] ? array(
             'id' => (int)$user['employee_id'],
             'nik' => $user['employee_nik'],

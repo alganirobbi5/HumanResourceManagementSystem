@@ -16,6 +16,7 @@ require_once __DIR__ . '/../common/Json.php';
 
 $user = Auth::requireApiAdmin();
 $adminId = Auth::adminId();
+$companyId = Auth::companyId();
 
 $tanggal = isset($_GET['date']) ? trim((string)$_GET['date']) : '';
 if (isset($_GET['tanggal']) && $tanggal === '') {
@@ -91,6 +92,10 @@ try {
     if ($adminId !== null) {
         $sql .= ' WHERE aa.admin_id = ?';
         $params[] = (int)$adminId;
+    }
+    if ($companyId !== null) {
+        $sql .= ($params ? ' AND' : ' WHERE') . ' aa.company_id = ?';
+        $params[] = (int)$companyId;
     }
     if ($tanggal !== '') {
         $sql .= ($params ? ' AND' : ' WHERE') . ' aa.tanggal = ?';

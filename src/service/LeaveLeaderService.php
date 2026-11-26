@@ -59,43 +59,59 @@ class LeaveLeaderService
         }
     }
 
-    public function listLeaders()
+    public function listLeaders($companyId = null)
     {
-        return $this->pdo->query(
-            'SELECT ll.id, ll.user_id, ll.employee_id, u.username,
-                    CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap,
-                    ll.keterangan,
-                    COALESCE(NULLIF(ll.jabatan, ""), ll.keterangan) AS jabatan,
-                    ll.created_at
-             FROM leave_leaders ll
-             LEFT JOIN users u ON u.id = ll.user_id
-             LEFT JOIN employees e ON e.id = COALESCE(ll.employee_id, u.employee_id)
-             ORDER BY ll.id DESC'
-        )->fetchAll(PDO::FETCH_ASSOC);
+        $sql = 'SELECT ll.id, ll.user_id, ll.employee_id, u.username,
+                       CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap,
+                       ll.keterangan,
+                       COALESCE(NULLIF(ll.jabatan, ""), ll.keterangan) AS jabatan,
+                       ll.created_at
+                FROM leave_leaders ll
+                LEFT JOIN users u ON u.id = ll.user_id
+                LEFT JOIN employees e ON e.id = COALESCE(ll.employee_id, u.employee_id)';
+        $params = array();
+        if ($companyId !== null) {
+            $sql .= ' WHERE COALESCE(ll.company_id, u.company_id) = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' ORDER BY ll.id DESC');
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function listEligibleUsers()
+    public function listEligibleUsers($companyId = null)
     {
-        return $this->pdo->query(
-            'SELECT u.id AS user_id, u.username, u.employee_id,
-                    CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap
-             FROM users u
-             LEFT JOIN employees e ON e.id = u.employee_id
-             LEFT JOIN leave_leaders ll ON ll.user_id = u.id
-             WHERE u.is_active = 1 AND u.employee_id IS NOT NULL AND ll.id IS NULL
-             ORDER BY u.id'
-        )->fetchAll(PDO::FETCH_ASSOC);
+        $sql = 'SELECT u.id AS user_id, u.username, u.employee_id,
+                       CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap
+                FROM users u
+                LEFT JOIN employees e ON e.id = u.employee_id
+                LEFT JOIN leave_leaders ll ON ll.user_id = u.id
+                WHERE u.is_active = 1 AND u.employee_id IS NOT NULL AND ll.id IS NULL';
+        $params = array();
+        if ($companyId !== null) {
+            $sql .= ' AND u.company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' ORDER BY u.id');
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function addLeader($targetUserId, $hrUserId, $keterangan = null, $jabatan = null)
+    public function addLeader($targetUserId, $hrUserId, $keterangan = null, $jabatan = null, $companyId = null)
     {
         $targetUserId = (int)$targetUserId;
         $jabatan = trim((string)$jabatan);
         if ($jabatan === '') {
             throw new InvalidArgumentException('jabatan wajib diisi', 422);
         }
-        $stmt = $this->pdo->prepare('SELECT id, employee_id FROM users WHERE id = ? AND is_active = 1 LIMIT 1');
-        $stmt->execute([$targetUserId]);
+        $userSql = 'SELECT id, employee_id FROM users WHERE id = ? AND is_active = 1';
+        $userParams = array($targetUserId);
+        if ($companyId !== null) {
+            $userSql .= ' AND company_id = ?';
+            $userParams[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($userSql . ' LIMIT 1');
+        $stmt->execute($userParams);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$user) {
             throw new InvalidArgumentException('User tidak ditemukan atau tidak aktif', 422);
@@ -105,66 +121,99 @@ class LeaveLeaderService
         if ($stmt->fetch()) {
             throw new RuntimeException('User sudah terdaftar sebagai Leader', 409);
         }
-        $this->pdo->prepare(
-            'INSERT INTO leave_leaders (user_id, employee_id, keterangan, jabatan, added_by) VALUES (?, ?, ?, ?, ?)'
-        )->execute(array($targetUserId, $user['employee_id'], $keterangan, $jabatan, (int)$hrUserId));
-        return $this->leaderRow($targetUserId);
+        $columns = 'user_id, employee_id, keterangan, jabatan, added_by';
+        $values = array($targetUserId, $user['employee_id'], $keterangan, $jabatan, (int)$hrUserId);
+        if ($this->pdo->query("SHOW COLUMNS FROM leave_leaders LIKE 'company_id'")->fetch()) {
+            $columns .= ', company_id';
+            $values[] = $companyId;
+        }
+        $this->pdo->prepare('INSERT INTO leave_leaders (' . $columns . ') VALUES (' .
+            implode(', ', array_fill(0, count($values), '?')) . ')')->execute($values);
+        return $this->leaderRow($targetUserId, $companyId);
     }
 
-    private function leaderRow($userId)
+    private function leaderRow($userId, $companyId = null)
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT ll.id, ll.user_id, ll.employee_id, u.username,
-                    CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap,
-                    ll.keterangan,
-                    COALESCE(NULLIF(ll.jabatan, ""), ll.keterangan) AS jabatan,
-                    ll.added_by, ll.created_at
-             FROM leave_leaders ll
-             LEFT JOIN users u ON u.id = ll.user_id
-             LEFT JOIN employees e ON e.id = COALESCE(ll.employee_id, u.employee_id)
-             WHERE ll.user_id = ? LIMIT 1'
-        );
-        $stmt->execute([(int)$userId]);
+        $sql = 'SELECT ll.id, ll.user_id, ll.employee_id, u.username,
+                       CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap,
+                       ll.keterangan,
+                       COALESCE(NULLIF(ll.jabatan, ""), ll.keterangan) AS jabatan,
+                       ll.added_by, ll.created_at
+                FROM leave_leaders ll
+                LEFT JOIN users u ON u.id = ll.user_id
+                LEFT JOIN employees e ON e.id = COALESCE(ll.employee_id, u.employee_id)
+                WHERE ll.user_id = ?';
+        $params = array((int)$userId);
+        if ($companyId !== null) {
+            $sql .= ' AND COALESCE(ll.company_id, u.company_id) = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
+        $stmt->execute($params);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    public function removeLeader($leaderIdOrUserId)
+    public function removeLeader($leaderIdOrUserId, $companyId = null)
     {
         $value = (int)$leaderIdOrUserId;
-        $stmt = $this->pdo->prepare('SELECT user_id FROM leave_leaders WHERE id = ? LIMIT 1');
-        $stmt->execute([$value]);
+        $sql = 'SELECT user_id FROM leave_leaders WHERE id = ?';
+        $params = array($value);
+        if ($companyId !== null) {
+            $sql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
+        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($row) {
             $this->pdo->prepare('DELETE FROM leave_leaders WHERE id = ?')->execute([$value]);
             return true;
         }
-        $stmt = $this->pdo->prepare('DELETE FROM leave_leaders WHERE user_id = ?');
-        $stmt->execute([$value]);
+        $deleteSql = 'DELETE FROM leave_leaders WHERE user_id = ?';
+        $deleteParams = array($value);
+        if ($companyId !== null) {
+            $deleteSql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
+            $deleteParams[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($deleteSql);
+        $stmt->execute($deleteParams);
         return $stmt->rowCount() > 0;
     }
 
-    public function isLeader($userId)
+    public function isLeader($userId, $companyId = null)
     {
         if (!$userId) {
             return false;
         }
         try {
-            $stmt = $this->pdo->prepare('SELECT 1 FROM leave_leaders WHERE user_id = ? LIMIT 1');
-            $stmt->execute([(int)$userId]);
+            if ($companyId !== null) {
+                $stmt = $this->pdo->prepare(
+                    'SELECT 1 FROM leave_leaders ll LEFT JOIN users u ON u.id = ll.user_id
+                     WHERE ll.user_id = ? AND COALESCE(ll.company_id, u.company_id) = ? LIMIT 1'
+                );
+                $stmt->execute(array((int)$userId, (int)$companyId));
+            } else {
+                $stmt = $this->pdo->prepare('SELECT 1 FROM leave_leaders WHERE user_id = ? LIMIT 1');
+                $stmt->execute([(int)$userId]);
+            }
             return (bool)$stmt->fetchColumn();
         } catch (PDOException $e) {
             return false;
         }
     }
 
-    public function leaderName($userId)
+    public function leaderName($userId, $companyId = null)
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT COALESCE(NULLIF(CONCAT_WS(" ", e.first_name, e.last_name), ""), u.username) AS nama
-             FROM users u LEFT JOIN employees e ON e.id = u.employee_id
-             WHERE u.id = ? LIMIT 1'
-        );
-        $stmt->execute([(int)$userId]);
+        $sql = 'SELECT COALESCE(NULLIF(CONCAT_WS(" ", e.first_name, e.last_name), ""), u.username) AS nama
+                FROM users u LEFT JOIN employees e ON e.id = u.employee_id
+                WHERE u.id = ?';
+        $params = array((int)$userId);
+        if ($companyId !== null) {
+            $sql .= ' AND u.company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
+        $stmt->execute($params);
         $name = $stmt->fetchColumn();
         return $name ? (string)$name : null;
     }

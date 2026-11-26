@@ -102,30 +102,36 @@ class LeaveService
     }
 
     /** Saldo cuti karyawan; otomatis dibuat dengan jatah default bila belum ada. */
-    public function getBalance($employeeId, $year = null)
+    public function getBalance($employeeId, $year = null, $companyId = null)
     {
         $year = $year ?: (int)Config::companyNow()->format('Y');
-        $row = $this->db->selectOne(
-            'SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ?',
-            array((int)$employeeId, Config::LEAVE_TYPE_DEFAULT, $year)
-        );
+        $balanceSql = 'SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ?';
+        $balanceParams = array((int)$employeeId, Config::LEAVE_TYPE_DEFAULT, $year);
+        if ($companyId !== null) {
+            $balanceSql .= ' AND company_id = ?';
+            $balanceParams[] = (int)$companyId;
+        }
+        $row = $this->db->selectOne($balanceSql, $balanceParams);
         if (!$row) {
+            $insertColumns = 'employee_id, leave_type, entitlement_year, entitled_days, used_days';
+            $insertValues = array((int)$employeeId, Config::LEAVE_TYPE_DEFAULT, $year, Config::LEAVE_ENTITLEMENT_DEFAULT, 0);
+            if ($this->db->getPdo()->query("SHOW COLUMNS FROM leave_balances LIKE 'company_id'")->fetch()) {
+                $insertColumns .= ', company_id';
+                $insertValues[] = $companyId;
+            }
             $this->db->insert(
-                'INSERT INTO leave_balances (employee_id, leave_type, entitlement_year, entitled_days, used_days)
-                 VALUES (?, ?, ?, ?, 0)',
-                array((int)$employeeId, Config::LEAVE_TYPE_DEFAULT, $year, Config::LEAVE_ENTITLEMENT_DEFAULT)
+                'INSERT INTO leave_balances (' . $insertColumns . ') VALUES (' .
+                implode(', ', array_fill(0, count($insertValues), '?')) . ')',
+                $insertValues
             );
-            $row = $this->db->selectOne(
-                'SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ?',
-                array((int)$employeeId, Config::LEAVE_TYPE_DEFAULT, $year)
-            );
+            $row = $this->db->selectOne($balanceSql, $balanceParams);
         }
         $row['remaining_days'] = (float)$row['entitled_days'] - (float)$row['used_days'];
         return $row;
     }
 
     /** Tambah jatah kuota cuti karyawan oleh HR. */
-    public function addEntitlement($employeeId, $days, $year = null)
+    public function addEntitlement($employeeId, $days, $year = null, $companyId = null)
     {
         $employeeId = (int)$employeeId;
         $days = (float)$days;
@@ -138,21 +144,27 @@ class LeaveService
             throw new InvalidArgumentException('Jumlah hari harus antara 0,5 sampai 90');
         }
 
-        $employee = $this->db->selectOne(
-            'SELECT id, first_name, last_name FROM employees WHERE id = ? AND status = 1',
-            array($employeeId)
-        );
+        $employeeSql = 'SELECT id, first_name, last_name FROM employees WHERE id = ? AND status = 1';
+        $employeeParams = array($employeeId);
+        if ($companyId !== null) {
+            $employeeSql .= ' AND company_id = ?';
+            $employeeParams[] = (int)$companyId;
+        }
+        $employee = $this->db->selectOne($employeeSql, $employeeParams);
         if (!$employee) {
             throw new InvalidArgumentException('Karyawan tidak ditemukan atau tidak aktif');
         }
 
-        $balance = $this->getBalance($employeeId, $year);
-        $this->db->run(
-            'UPDATE leave_balances SET entitled_days = entitled_days + ?, updated_at = NOW() WHERE id = ?',
-            array($days, (int)$balance['id'])
-        );
+        $balance = $this->getBalance($employeeId, $year, $companyId);
+        $updateBalanceSql = 'UPDATE leave_balances SET entitled_days = entitled_days + ?, updated_at = NOW() WHERE id = ?';
+        $updateBalanceParams = array($days, (int)$balance['id']);
+        if ($companyId !== null) {
+            $updateBalanceSql .= ' AND company_id = ?';
+            $updateBalanceParams[] = (int)$companyId;
+        }
+        $this->db->run($updateBalanceSql, $updateBalanceParams);
 
-        return $this->getBalance($employeeId, $year);
+        return $this->getBalance($employeeId, $year, $companyId);
     }
 
     /**
@@ -198,7 +210,7 @@ class LeaveService
         return $stmt && $stmt->fetch() !== false;
     }
 
-    public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId, $leaderUserId = null)
+    public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId, $leaderUserId = null, $companyId = null)
     {
         $reason = trim((string)$reason);
         if ($reason === '') {
@@ -211,7 +223,7 @@ class LeaveService
             throw new InvalidArgumentException('Nama pengganti wajib dipilih');
         }
         $leaderUserId = (int)$leaderUserId;
-        if ($leaderUserId <= 0 || !$this->leaders->isLeader($leaderUserId)) {
+        if ($leaderUserId <= 0 || !$this->leaders->isLeader($leaderUserId, $companyId)) {
             throw new InvalidArgumentException('Leader persetujuan cuti tidak valid', 422);
         }
 
@@ -225,10 +237,13 @@ class LeaveService
         }
 
         // Pengganti harus karyawan aktif dan bukan diri sendiri
-        $replacement = $this->db->selectOne(
-            'SELECT id, first_name, last_name FROM employees WHERE id = ? AND status = 1',
-            array((int)$replacementEmployeeId)
-        );
+        $replacementSql = 'SELECT id, first_name, last_name FROM employees WHERE id = ? AND status = 1';
+        $replacementParams = array((int)$replacementEmployeeId);
+        if ($companyId !== null) {
+            $replacementSql .= ' AND company_id = ?';
+            $replacementParams[] = (int)$companyId;
+        }
+        $replacement = $this->db->selectOne($replacementSql, $replacementParams);
         if (!$replacement) {
             throw new InvalidArgumentException('Karyawan pengganti tidak ditemukan atau tidak aktif');
         }
@@ -238,20 +253,22 @@ class LeaveService
 
         // Cek tumpang tindih dengan pengajuan yang sudah disetujui
         if (Config::PREVENT_LEAVE_OVERLAP) {
-            $overlap = $this->db->selectOne(
-                "SELECT id FROM leave_requests
-                 WHERE employee_id = ? AND status = 'approved'
-                   AND start_date <= ? AND end_date >= ?
-                 LIMIT 1",
-                array((int)$employeeId, $endDate, $startDate)
-            );
+            $overlapSql = "SELECT id FROM leave_requests
+                           WHERE employee_id = ? AND status = 'approved'
+                             AND start_date <= ? AND end_date >= ?";
+            $overlapParams = array((int)$employeeId, $endDate, $startDate);
+            if ($companyId !== null) {
+                $overlapSql .= ' AND company_id = ?';
+                $overlapParams[] = (int)$companyId;
+            }
+            $overlap = $this->db->selectOne($overlapSql . ' LIMIT 1', $overlapParams);
             if ($overlap) {
                 throw new InvalidArgumentException('Rentang tanggal cuti bertabrakan dengan pengajuan yang sudah disetujui');
             }
         }
 
         // Kuota harus mencukupi saat pengajuan dibuat (saldo tahun pada tanggal mulai cuti)
-        $balance = $this->getBalance($employeeId, (int)date('Y', strtotime($startDate)));
+        $balance = $this->getBalance($employeeId, (int)date('Y', strtotime($startDate)), $companyId);
         if ((float)$balance['remaining_days'] < $totalDays) {
             throw new InvalidArgumentException(
                 'Sisa kuota cuti tidak mencukupi (sisa ' . $balance['remaining_days'] . ' hari, diajukan ' . $totalDays . ' hari)'
@@ -277,6 +294,10 @@ class LeaveService
             $columns[] = 'leader_user_id';
             $values[] = $leaderUserId;
         }
+        if ($companyId !== null && $this->hasLeaveRequestColumn('company_id')) {
+            $columns[] = 'company_id';
+            $values[] = (int)$companyId;
+        }
         $id = $this->db->insert(
             'INSERT INTO leave_requests (' . implode(', ', $columns) . ') VALUES (' .
             implode(', ', array_fill(0, count($values), '?')) . ')',
@@ -297,7 +318,7 @@ class LeaveService
             'total_days' => $totalDays
         ));
 
-        return $this->detail($id);
+        return $this->detail($id, $companyId);
     }
 
     private function baseSelect($extraJoin = '')
@@ -331,7 +352,7 @@ class LeaveService
      * Daftar pengajuan pada tabel leaves (alur mobile) dengan filter scope:
      * leader (leader_user_id), mine (employee_id), atau all (tanpa filter).
      */
-    public function listLeaves($scope, $userId = null)
+    public function listLeaves($scope, $userId = null, $companyId = null)
     {
         $fields = 'l.id, l.employee_id, l.type, l.leave_from, l.leave_to, l.status,
                    FROM_UNIXTIME(l.created_at) AS created_at,
@@ -367,6 +388,10 @@ class LeaveService
             $where[] = 'l.employee_id = ?';
             $params[] = (int)$userId;
         }
+        if ($companyId !== null) {
+            $where[] = 'l.company_id = ?';
+            $params[] = (int)$companyId;
+        }
         $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
         $stmt = $this->db->getPdo()->prepare(
@@ -378,25 +403,36 @@ class LeaveService
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function detail($id)
+    public function detail($id, $companyId = null)
     {
-        return $this->db->selectOne($this->baseSelect(' WHERE lr.id = ?'), array((int)$id));
+        $where = ' WHERE lr.id = ?';
+        $params = array((int)$id);
+        if ($companyId !== null) {
+            $where .= ' AND lr.company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        return $this->db->selectOne($this->baseSelect($where), $params);
     }
 
-    public function forLeader($leaderUserId, $page = 1, $perPage = 10)
+    public function forLeader($leaderUserId, $page = 1, $perPage = 10, $companyId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(50, max(1, (int)$perPage));
         $offset = ($page - 1) * $perPage;
 
-        $totalRow = $this->db->selectOne(
-            'SELECT COUNT(id) AS total FROM leave_requests WHERE leader_user_id = ?',
-            array((int)$leaderUserId)
-        );
+        $totalSql = 'SELECT COUNT(id) AS total FROM leave_requests WHERE leader_user_id = ?';
+        $params = array((int)$leaderUserId);
+        $where = ' WHERE lr.leader_user_id = ?';
+        if ($companyId !== null) {
+            $totalSql .= ' AND company_id = ?';
+            $where .= ' AND lr.company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $totalRow = $this->db->selectOne($totalSql, $params);
         $rows = $this->db->selectAll(
-            $this->baseSelect(' WHERE lr.leader_user_id = ?')
+            $this->baseSelect($where)
             . ' ORDER BY lr.submitted_at DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset,
-            array((int)$leaderUserId)
+            $params
         );
 
         return array(
@@ -407,20 +443,25 @@ class LeaveService
         );
     }
 
-    public function mine($employeeId, $page = 1, $perPage = 10)
+    public function mine($employeeId, $page = 1, $perPage = 10, $companyId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(50, max(1, (int)$perPage));
         $offset = ($page - 1) * $perPage;
 
-        $totalRow = $this->db->selectOne(
-            'SELECT COUNT(id) AS total FROM leave_requests WHERE employee_id = ?',
-            array((int)$employeeId)
-        );
+        $totalSql = 'SELECT COUNT(id) AS total FROM leave_requests WHERE employee_id = ?';
+        $params = array((int)$employeeId);
+        $where = ' WHERE lr.employee_id = ?';
+        if ($companyId !== null) {
+            $totalSql .= ' AND company_id = ?';
+            $where .= ' AND lr.company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $totalRow = $this->db->selectOne($totalSql, $params);
         $rows = $this->db->selectAll(
-            $this->baseSelect(' WHERE lr.employee_id = ?')
+            $this->baseSelect($where)
             . ' ORDER BY lr.submitted_at DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset,
-            array((int)$employeeId)
+            $params
         );
 
         return array(
@@ -431,22 +472,28 @@ class LeaveService
         );
     }
 
-    public function pending($page = 1, $perPage = 10, $leaderUserId = null)
+    public function pending($page = 1, $perPage = 10, $leaderUserId = null, $companyId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(50, max(1, (int)$perPage));
         $offset = ($page - 1) * $perPage;
 
         $leaderFilter = $leaderUserId ? ' AND leader_user_id = ?' : '';
-        $leaderParams = $leaderUserId ? array((int)$leaderUserId) : array();
+        $leaderWhere = $leaderUserId ? ' AND lr.leader_user_id = ?' : '';
+        $params = $leaderUserId ? array((int)$leaderUserId) : array();
+        if ($companyId !== null) {
+            $leaderFilter .= ' AND company_id = ?';
+            $leaderWhere .= ' AND lr.company_id = ?';
+            $params[] = (int)$companyId;
+        }
         $totalRow = $this->db->selectOne(
             "SELECT COUNT(id) AS total FROM leave_requests WHERE status = 'pending'" . $leaderFilter,
-            $leaderParams
+            $params
         );
         $rows = $this->db->selectAll(
-            $this->baseSelect(" WHERE lr.status = 'pending'" . $leaderFilter)
+            $this->baseSelect(" WHERE lr.status = 'pending'" . $leaderWhere)
             . ' ORDER BY lr.submitted_at ASC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset,
-            $leaderParams
+            $params
         );
 
         return array(
@@ -457,7 +504,7 @@ class LeaveService
         );
     }
 
-    public function all($filters = array(), $page = 1, $perPage = 10, $leaderUserId = null)
+    public function all($filters = array(), $page = 1, $perPage = 10, $leaderUserId = null, $companyId = null)
     {
         $page = max(1, (int)$page);
         $perPage = min(50, max(1, (int)$perPage));
@@ -468,6 +515,10 @@ class LeaveService
         if ($leaderUserId) {
             $where[] = 'lr.leader_user_id = ?';
             $params[] = (int)$leaderUserId;
+        }
+        if ($companyId !== null) {
+            $where[] = 'lr.company_id = ?';
+            $params[] = (int)$companyId;
         }
         if (!empty($filters['status']) && in_array($filters['status'], array('pending', 'approved', 'rejected'), true)) {
             $where[] = 'lr.status = ?';
@@ -501,9 +552,9 @@ class LeaveService
 
     const NOT_LEADER_MESSAGE = 'Hanya user yang terdaftar sebagai Leader persetujuan cuti yang dapat menyetujui atau menolak pengajuan.';
 
-    private function assertLeaderCanDecide($row, $approverUserId)
+    private function assertLeaderCanDecide($row, $approverUserId, $companyId = null)
     {
-        if (!$this->leaders->isLeader($approverUserId)) {
+        if (!$this->leaders->isLeader($approverUserId, $companyId)) {
             throw new RuntimeException(self::NOT_LEADER_MESSAGE, 403);
         }
         if (!empty($row['leader_user_id']) && (int)$row['leader_user_id'] !== (int)$approverUserId) {
@@ -531,27 +582,33 @@ class LeaveService
         }
     }
 
-    public function approve($id, $approverUserId, $catatanLeader = null)
+    public function approve($id, $approverUserId, $catatanLeader = null, $companyId = null)
     {
         $this->db->beginTransaction();
         try {
             // Kunci baris agar approve bersamaan tidak membuat kuota negatif
-            $row = $this->db->selectOne(
-                'SELECT * FROM leave_requests WHERE id = ? FOR UPDATE',
-                array((int)$id)
-            );
+            $rowSql = 'SELECT * FROM leave_requests WHERE id = ?';
+            $rowParams = array((int)$id);
+            if ($companyId !== null) {
+                $rowSql .= ' AND company_id = ?';
+                $rowParams[] = (int)$companyId;
+            }
+            $row = $this->db->selectOne($rowSql . ' FOR UPDATE', $rowParams);
             if (!$row) {
                 throw new RuntimeException('Pengajuan cuti tidak ditemukan');
             }
             if ($row['status'] !== 'pending') {
                 throw new RuntimeException('Pengajuan sudah diproses sebelumnya');
             }
-            $this->assertLeaderCanDecide($row, $approverUserId);
+            $this->assertLeaderCanDecide($row, $approverUserId, $companyId);
 
-            $balance = $this->db->selectOne(
-                'SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ? FOR UPDATE',
-                array((int)$row['employee_id'], Config::LEAVE_TYPE_DEFAULT, (int)date('Y', strtotime($row['start_date'])))
-            );
+            $balanceSql = 'SELECT * FROM leave_balances WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ?';
+            $balanceParams = array((int)$row['employee_id'], Config::LEAVE_TYPE_DEFAULT, (int)date('Y', strtotime($row['start_date'])));
+            if ($companyId !== null) {
+                $balanceSql .= ' AND company_id = ?';
+                $balanceParams[] = (int)$companyId;
+            }
+            $balance = $this->db->selectOne($balanceSql . ' FOR UPDATE', $balanceParams);
             if (!$balance) {
                 throw new RuntimeException('Saldo cuti karyawan tidak ditemukan');
             }
@@ -568,14 +625,19 @@ class LeaveService
             $params = array((int)$approverUserId, $now, $now);
             $this->appendLeaderDecision($set, $params, $approverUserId, $catatanLeader, $now);
             $params[] = (int)$id;
-            $this->db->run(
-                'UPDATE leave_requests SET ' . implode(', ', $set) . ' WHERE id = ? AND status = "pending"',
-                $params
-            );
-            $this->db->run(
-                'UPDATE leave_balances SET used_days = used_days + ?, updated_at = ? WHERE id = ?',
-                array($days, $now, (int)$balance['id'])
-            );
+            $updateSql = 'UPDATE leave_requests SET ' . implode(', ', $set) . ' WHERE id = ? AND status = "pending"';
+            if ($companyId !== null) {
+                $updateSql .= ' AND company_id = ?';
+                $params[] = (int)$companyId;
+            }
+            $this->db->run($updateSql, $params);
+            $balanceUpdateSql = 'UPDATE leave_balances SET used_days = used_days + ?, updated_at = ? WHERE id = ?';
+            $balanceUpdateParams = array($days, $now, (int)$balance['id']);
+            if ($companyId !== null) {
+                $balanceUpdateSql .= ' AND company_id = ?';
+                $balanceUpdateParams[] = (int)$companyId;
+            }
+            $this->db->run($balanceUpdateSql, $balanceUpdateParams);
 
             $this->db->commit();
         } catch (Exception $e) {
@@ -583,7 +645,7 @@ class LeaveService
             throw $e;
         }
 
-        $detail = $this->detail($id);
+        $detail = $this->detail($id, $companyId);
         $period = $row['start_date'] . ' s/d ' . $row['end_date'];
 
         $this->notifications->notifyEmployee(
@@ -610,10 +672,10 @@ class LeaveService
             'used_days_added' => $days
         ));
 
-        return $this->detail($id);
+        return $this->detail($id, $companyId);
     }
 
-    public function reject($id, $approverUserId, $rejectionReason, $catatanLeader = null)
+    public function reject($id, $approverUserId, $rejectionReason, $catatanLeader = null, $companyId = null)
     {
         $rejectionReason = trim((string)$rejectionReason);
         if ($rejectionReason === '') {
@@ -622,17 +684,20 @@ class LeaveService
 
         $this->db->beginTransaction();
         try {
-            $row = $this->db->selectOne(
-                'SELECT * FROM leave_requests WHERE id = ? FOR UPDATE',
-                array((int)$id)
-            );
+            $rowSql = 'SELECT * FROM leave_requests WHERE id = ?';
+            $rowParams = array((int)$id);
+            if ($companyId !== null) {
+                $rowSql .= ' AND company_id = ?';
+                $rowParams[] = (int)$companyId;
+            }
+            $row = $this->db->selectOne($rowSql . ' FOR UPDATE', $rowParams);
             if (!$row) {
                 throw new RuntimeException('Pengajuan cuti tidak ditemukan');
             }
             if ($row['status'] !== 'pending') {
                 throw new RuntimeException('Pengajuan sudah diproses sebelumnya');
             }
-            $this->assertLeaderCanDecide($row, $approverUserId);
+            $this->assertLeaderCanDecide($row, $approverUserId, $companyId);
 
             $now = Config::companyNow()->format('Y-m-d H:i:s');
             $set = array("status = 'rejected'", 'reviewed_by = ?', 'reviewed_at = ?',
@@ -646,10 +711,12 @@ class LeaveService
                 $now
             );
             $params[] = (int)$id;
-            $this->db->run(
-                'UPDATE leave_requests SET ' . implode(', ', $set) . ' WHERE id = ? AND status = "pending"',
-                $params
-            );
+            $updateSql = 'UPDATE leave_requests SET ' . implode(', ', $set) . ' WHERE id = ? AND status = "pending"';
+            if ($companyId !== null) {
+                $updateSql .= ' AND company_id = ?';
+                $params[] = (int)$companyId;
+            }
+            $this->db->run($updateSql, $params);
             // Penolakan tidak mengurangi kuota
             $this->db->commit();
         } catch (Exception $e) {
@@ -670,6 +737,6 @@ class LeaveService
             'rejection_reason' => $rejectionReason
         ));
 
-        return $this->detail($id);
+        return $this->detail($id, $companyId);
     }
 }

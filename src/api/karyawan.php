@@ -24,6 +24,15 @@ if ($employeeId <= 0) {
 }
 
 try {
+    $companyId = Auth::companyId();
+    if ($companyId !== null) {
+        $pdo = DBConnection::pdo();
+        $check = $pdo->prepare('SELECT id FROM employees WHERE id = ? AND company_id = ? LIMIT 1');
+        $check->execute(array($employeeId, $companyId));
+        if (!$check->fetch()) {
+            Json::error('Karyawan tidak ditemukan', 404);
+        }
+    }
     $service = new EmployeeAccountService();
     if ($action === 'deactivate') {
         $service->setActive($employeeId, 0);

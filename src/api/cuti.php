@@ -13,29 +13,30 @@ require_once __DIR__ . '/../service/LeaveService.php';
 $user = Auth::requireApi();
 $leaders = new LeaveLeaderService();
 $service = new LeaveService();
+$companyId = Auth::companyId();
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : 'me';
 
     if ($scope === 'leader') {
-        if (!$leaders->isLeader((int)$user['id'])) {
+        if (!$leaders->isLeader((int)$user['id'], $companyId)) {
             Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
         }
-        Json::ok('OK', array('data' => $service->listLeaves('leader', (int)$user['id'])));
+        Json::ok('OK', array('data' => $service->listLeaves('leader', (int)$user['id'], $companyId)));
     }
 
     if ($scope === 'all') {
         if (!Auth::isHr()) {
             Json::error('Anda tidak memiliki izin melihat seluruh pengajuan cuti', 403);
         }
-        Json::ok('OK', array('data' => $service->listLeaves('all')));
+        Json::ok('OK', array('data' => $service->listLeaves('all', null, $companyId)));
     }
 
     if ($user['employee_id']) {
-        Json::ok('OK', array('data' => $service->listLeaves('mine', (int)$user['employee_id'])));
+        Json::ok('OK', array('data' => $service->listLeaves('mine', (int)$user['employee_id'], $companyId)));
     }
     if (Auth::isHr()) {
-        Json::ok('OK', array('data' => $service->listLeaves('all')));
+        Json::ok('OK', array('data' => $service->listLeaves('all', null, $companyId)));
     }
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
@@ -47,7 +48,7 @@ if (!$user['employee_id']) {
 $data = Json::readRequest();
 $leaderUserId = isset($data['leader_user_id']) ? (int)$data['leader_user_id'] : 0;
 $leaderService = new LeaveLeaderService();
-if ($leaderUserId <= 0 || !$leaderService->isLeader($leaderUserId)) {
+if ($leaderUserId <= 0 || !$leaderService->isLeader($leaderUserId, $companyId)) {
     Json::error('Leader persetujuan cuti tidak valid', 422);
 }
 
@@ -70,6 +71,10 @@ try {
 
     $columns = array('employee_id', 'type', 'leave_from', 'leave_to', 'total_leave', 'status', 'leader_user_id', 'created_at');
     $values = array((int)$user['employee_id'], $judul, $startDate, $endDate, $totalLeave, 1, $leaderUserId, time());
+    if ($companyId !== null) {
+        $columns[] = 'company_id';
+        $values[] = (int)$companyId;
+    }
     $optional = array('reason' => $reason);
     if (!empty($data['replacement_employee_id'])) {
         $optional['replacement_employee_id'] = (int)$data['replacement_employee_id'];
@@ -101,3 +106,4 @@ try {
 } catch (PDOException $e) {
     Json::error('Gagal menyimpan pengajuan cuti', 500);
 }
+

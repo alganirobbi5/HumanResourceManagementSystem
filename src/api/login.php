@@ -14,13 +14,19 @@ if (session_status() === PHP_SESSION_NONE) {
  * employee_id hanya boleh diambil dari relasi karyawan yang nyata.
  * Jangan pernah mengarang atau menebak ID karyawan.
  */
-function genuineEmployeeId($pdo, $candidate)
+function genuineEmployeeId($pdo, $candidate, $companyId = null)
 {
     if ($candidate === null || $candidate === '') {
         return null;
     }
-    $stmt = $pdo->prepare("SELECT id FROM employees WHERE id = ? LIMIT 1");
-    $stmt->execute([(int)$candidate]);
+    $sql = "SELECT id FROM employees WHERE id = ?";
+    $params = array((int)$candidate);
+    if ($companyId !== null) {
+        $sql .= " AND company_id = ?";
+        $params[] = (int)$companyId;
+    }
+    $stmt = $pdo->prepare($sql . " LIMIT 1");
+    $stmt->execute($params);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return $row ? (int)$row['id'] : null;
 }
@@ -30,7 +36,7 @@ function genuineEmployeeId($pdo, $candidate)
  * Relasi eksplisit memakai users.admin_id, BUKAN nama dan BUKAN admins.id
  * sebagai employee_id. Tidak membuat data kepegawaian.
  */
-function findOrCreateAdminApiIdentity($pdo, array $admin)
+function findOrCreateAdminApiIdentity($pdo, array $admin, $companyId = null)
 {
     try {
         $col = $pdo->query("SHOW COLUMNS FROM users LIKE 'admin_id'");
@@ -54,9 +60,9 @@ function findOrCreateAdminApiIdentity($pdo, array $admin)
         $username = 'admin_' . $adminId . '_' . bin2hex(random_bytes(6));
         // Kolom email sengaja tidak dipakai: skema VPS users tidak memilikinya.
         $pdo->prepare(
-            "INSERT INTO users (username, password_hash, role, employee_id, admin_id, is_active)
-             VALUES (?, UUID(), 'hr', NULL, ?, 1)"
-        )->execute([$username, $adminId]);
+            "INSERT INTO users (username, password_hash, role, employee_id, admin_id, company_id, is_active)
+             VALUES (?, UUID(), 'hr', NULL, ?, ?, 1)"
+        )->execute([$username, $adminId, $companyId !== null ? (int)$companyId : null]);
 
         $userId = (int)$pdo->lastInsertId();
         $pdo->commit();
@@ -87,14 +93,15 @@ function findOrCreateAdminApiIdentity($pdo, array $admin)
  * employees.user_name + employees.password, lalu dibuatkan identitas users.
  * Kredensial diverifikasi dari employees, employee_id tidak pernah ditebak.
  */
-function findOrCreateEmployeeApiIdentity($pdo, $username, $password)
+function findOrCreateEmployeeApiIdentity($pdo, $username, $password, $companyId = null)
 {
     try {
         $col = $pdo->query("SHOW COLUMNS FROM employees LIKE 'status'");
         $statusColumn = $col && $col->fetch() ? ', status' : '';
+        $companyFilter = $companyId !== null ? ' AND company_id = ?' : '';
 
-        $stmt = $pdo->prepare("SELECT id, user_name, password$statusColumn FROM employees WHERE user_name = ? LIMIT 1");
-        $stmt->execute([$username]);
+        $stmt = $pdo->prepare("SELECT id, user_name, password$statusColumn FROM employees WHERE user_name = ?$companyFilter LIMIT 1");
+        $stmt->execute($companyId !== null ? array($username, (int)$companyId) : array($username));
         $employee = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$employee) {
             return null;
@@ -124,12 +131,13 @@ function findOrCreateEmployeeApiIdentity($pdo, $username, $password)
         }
 
         $pdo->prepare(
-            "INSERT INTO users (employee_id, username, password_hash, role, is_active)
-             VALUES (?, ?, ?, 'employee', 1)"
+            "INSERT INTO users (employee_id, username, password_hash, role, company_id, is_active)
+             VALUES (?, ?, ?, 'employee', ?, 1)"
         )->execute(array(
             (int)$employee['id'],
             $username,
-            password_hash($password, PASSWORD_BCRYPT)
+            password_hash($password, PASSWORD_BCRYPT),
+            $companyId !== null ? (int)$companyId : null
         ));
         return (int)$pdo->lastInsertId();
     } catch (PDOException $e) {
@@ -142,12 +150,46 @@ $data = json_decode(file_get_contents("php://input"));
 if (!empty($data->username) && !empty($data->password)) {
     $username = $data->username;
     $password = $data->password;
+    $companyCode = isset($data->company_code) ? trim((string)$data->company_code) : '';
 
     try {
         $pdo = DBConnection::pdo();
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        findOrCreateEmployeeApiIdentity($pdo, $username, $password);
+        $roleStmt = $pdo->prepare('SELECT role, company_id FROM users WHERE username = ? LIMIT 1');
+        $roleStmt->execute([$username]);
+        $existingUser = $roleStmt->fetch(PDO::FETCH_ASSOC);
+        $isSuperLogin = $existingUser && $existingUser['role'] === 'super_admin';
+
+        $company = null;
+        if (!$isSuperLogin) {
+            if ($companyCode === '') {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'company_code wajib diisi']);
+                exit;
+            }
+            $companyStmt = $pdo->prepare(
+                'SELECT id, company_code, company_name FROM companies WHERE company_code = ? AND status = 1 LIMIT 1'
+            );
+            $companyStmt->execute([$companyCode]);
+            $company = $companyStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$company) {
+                http_response_code(422);
+                echo json_encode(['success' => false, 'message' => 'company_code tidak valid']);
+                exit;
+            }
+            if ($existingUser && $existingUser['company_id'] !== null
+                && (int)$existingUser['company_id'] !== (int)$company['id']) {
+                http_response_code(403);
+                echo json_encode(['success' => false, 'message' => 'Akun tidak sesuai dengan perusahaan']);
+                exit;
+            }
+        }
+        $companyId = $company ? (int)$company['id'] : null;
+
+        if (!$isSuperLogin) {
+            findOrCreateEmployeeApiIdentity($pdo, $username, $password, $companyId);
+        }
 
         // 1. AKUN MODERN (tabel users)
         $stmt = $pdo->prepare("SELECT u.*, e.id AS employee_row_id, e.first_name, e.last_name
@@ -158,7 +200,10 @@ if (!empty($data->username) && !empty($data->password)) {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && password_verify($password, $user['password_hash'])) {
-            $employeeId = genuineEmployeeId($pdo, $user['employee_id']);
+            $employeeId = genuineEmployeeId($pdo, $user['employee_id'], $isSuperLogin ? null : $companyId);
+            $responseCompanyId = $user['company_id'] !== null ? (int)$user['company_id'] : null;
+            $responseCompanyCode = $company ? $company['company_code'] : null;
+            $responseCompanyName = $company ? $company['company_name'] : null;
             $token = bin2hex(random_bytes(32));
             $stmt2 = $pdo->prepare('UPDATE users SET api_token = ? WHERE id = ?');
             $stmt2->execute([$token, (int)$user['id']]);
@@ -173,6 +218,9 @@ if (!empty($data->username) && !empty($data->password)) {
             $_SESSION['user_role'] = $user['role'];
             $_SESSION['user_name'] = $user['username'];
             $_SESSION['employee_id'] = $employeeId;
+            $_SESSION['company_id'] = $responseCompanyId;
+            $_SESSION['company_code'] = $responseCompanyCode;
+            $_SESSION['company_name'] = $responseCompanyName;
             $_SESSION['display_name'] = $displayName;
             $_SESSION['api_token'] = $token;
 
@@ -194,6 +242,9 @@ if (!empty($data->username) && !empty($data->password)) {
                         "employee_id" => $employeeId,
                         "username" => $user['username'],
                         "role" => $user['role'],
+                        "company_id" => $responseCompanyId,
+                        "company_code" => $responseCompanyCode,
+                        "company_name" => $responseCompanyName,
                         "nama_lengkap" => $displayName,
                         "is_leave_leader" => (new LeaveLeaderService())->isLeader((int)$user['id'])
                     ]
@@ -218,7 +269,7 @@ if (!empty($data->username) && !empty($data->password)) {
         }
 
         if ($admin && $adminPasswordOk) {
-            $userId = findOrCreateAdminApiIdentity($pdo, $admin);
+            $userId = findOrCreateAdminApiIdentity($pdo, $admin, $companyId);
             $token = null;
             if ($userId !== null) {
                 $token = bin2hex(random_bytes(32));
@@ -233,6 +284,9 @@ if (!empty($data->username) && !empty($data->password)) {
             $_SESSION['user_role'] = 'hr';
             $_SESSION['user_name'] = $admin['name'];
             $_SESSION['employee_id'] = null;
+            $_SESSION['company_id'] = $companyId;
+            $_SESSION['company_code'] = $company ? $company['company_code'] : null;
+            $_SESSION['company_name'] = $company ? $company['company_name'] : null;
             $_SESSION['display_name'] = $admin['name'];
             $_SESSION['admin_name'] = $admin['name'];
             if ($userId !== null) {
@@ -255,6 +309,9 @@ if (!empty($data->username) && !empty($data->password)) {
                         "admin_id" => (int)$admin['id'],
                         "username" => $admin['name'],
                         "role" => "hr",
+                        "company_id" => $companyId,
+                        "company_code" => $company ? $company['company_code'] : null,
+                        "company_name" => $company ? $company['company_name'] : null,
                         "nama_lengkap" => $admin['name'],
                         "is_leave_leader" => (new LeaveLeaderService())->isLeader($userId)
                     ]

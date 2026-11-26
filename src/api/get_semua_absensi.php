@@ -13,6 +13,7 @@ Auth::requireApiHr();
 try {
     $service = new AttendanceReportService(DBConnection::get());
     $data = $service->all(array(
+        'company_id' => Auth::companyId(),
         'tanggal' => isset($_GET['date']) ? trim((string)$_GET['date']) : '',
         'start_date' => isset($_GET['start_date']) ? trim((string)$_GET['start_date']) : '',
         'end_date' => isset($_GET['end_date']) ? trim((string)$_GET['end_date']) : '',

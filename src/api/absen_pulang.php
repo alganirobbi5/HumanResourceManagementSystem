@@ -12,6 +12,7 @@ require_once __DIR__ . '/../service/AttendanceService.php';
 
 $user = Auth::requireApi();
 $employee_id = $user['employee_id'];
+$companyId = Auth::companyId();
 
 $data = Json::readRequest();
 
@@ -97,8 +98,13 @@ $checkDeleted = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
 if ($checkDeleted && $checkDeleted->fetch()) {
     $filterDeleted = ' AND deleted_at IS NULL';
 }
+$selectParams = array($employee_id, $tanggal);
+if ($companyId !== null) {
+    $filterDeleted .= ' AND company_id = ?';
+    $selectParams[] = (int)$companyId;
+}
 $stmt = $pdo->prepare("SELECT id, clock_in, clock_out$selfieColumn FROM attendances WHERE employee_id = ? AND date = ?$filterDeleted ORDER BY id DESC LIMIT 1");
-$stmt->execute([$employee_id, $tanggal]);
+$stmt->execute($selectParams);
 $absen = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$absen) {
@@ -133,7 +139,12 @@ if ($selfie) {
     }
 }
 $values[] = $absen['id'];
-$update = $pdo->prepare("UPDATE attendances SET " . implode(', ', $updates) . " WHERE id = ?");
+$updateSql = "UPDATE attendances SET " . implode(', ', $updates) . " WHERE id = ?";
+if ($companyId !== null) {
+    $updateSql .= ' AND company_id = ?';
+    $values[] = (int)$companyId;
+}
+$update = $pdo->prepare($updateSql);
 $update->execute($values);
 
 Json::out(array(

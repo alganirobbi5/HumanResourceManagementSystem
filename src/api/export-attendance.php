@@ -32,7 +32,11 @@ if ($rangeDays > Config::MAX_EXPORT_RANGE_DAYS) {
 
 try {
     $service = new AttendanceReportService(DBConnection::get());
-    $rows = $service->all(array('start_date' => $startDate, 'end_date' => $endDate));
+    $rows = $service->all(array(
+        'company_id' => Auth::companyId(),
+        'start_date' => $startDate,
+        'end_date' => $endDate
+    ));
 
     // Kelompokkan data per tanggal
     $byDate = array();

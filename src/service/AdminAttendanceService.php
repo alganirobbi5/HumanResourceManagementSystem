@@ -18,7 +18,7 @@ class AdminAttendanceService
         return (bool)$this->db->selectOne("SHOW COLUMNS FROM admin_attendances LIKE '" . $column . "'");
     }
 
-    public function status($adminId, $tanggal = null)
+    public function status($adminId, $tanggal = null, $companyId = null)
     {
         if (!$adminId) {
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
@@ -35,10 +35,13 @@ class AdminAttendanceService
         if ($this->hasColumn('selfie_pulang')) {
             $columns .= ', selfie_pulang';
         }
-        $row = $this->db->selectOne(
-            'SELECT ' . $columns . ' FROM admin_attendances WHERE admin_id = ? AND tanggal = ? LIMIT 1',
-            array((int)$adminId, $tanggal)
-        );
+        $statusSql = 'SELECT ' . $columns . ' FROM admin_attendances WHERE admin_id = ? AND tanggal = ?';
+        $statusParams = array((int)$adminId, $tanggal);
+        if ($companyId !== null) {
+            $statusSql .= ' AND company_id = ?';
+            $statusParams[] = (int)$companyId;
+        }
+        $row = $this->db->selectOne($statusSql . ' LIMIT 1', $statusParams);
 
         return array(
             'id' => $row ? (int)$row['id'] : null,
@@ -57,7 +60,7 @@ class AdminAttendanceService
     /**
      * Check-in Admin HR. Identitas berasal dari token (adminId), bukan request.
      */
-    public function checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId = null, $selfie = null)
+    public function checkIn($adminId, $latitude, $longitude, $gpsAccuracy, $requestId = null, $selfie = null, $companyId = null)
     {
         if (!$adminId) {
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
@@ -73,10 +76,13 @@ class AdminAttendanceService
 
         $this->db->beginTransaction();
         try {
-            $existing = $this->db->selectOne(
-                'SELECT id FROM admin_attendances WHERE admin_id = ? AND tanggal = ? FOR UPDATE',
-                array((int)$adminId, $tanggal)
-            );
+            $existingSql = 'SELECT id FROM admin_attendances WHERE admin_id = ? AND tanggal = ?';
+            $existingParams = array((int)$adminId, $tanggal);
+            if ($companyId !== null) {
+                $existingSql .= ' AND company_id = ?';
+                $existingParams[] = (int)$companyId;
+            }
+            $existing = $this->db->selectOne($existingSql . ' FOR UPDATE', $existingParams);
             if ($existing) {
                 $this->db->rollBack();
                 throw new RuntimeException('Anda sudah melakukan absen masuk hari ini');
@@ -101,6 +107,10 @@ class AdminAttendanceService
                 $columns[] = 'selfie_masuk_mime';
                 $values[] = $selfieData['mime_type'];
             }
+            if ($companyId !== null) {
+                $columns[] = 'company_id';
+                $values[] = (int)$companyId;
+            }
             $this->db->run(
                 'INSERT INTO admin_attendances (' . implode(', ', $columns) . ') VALUES (' .
                 implode(', ', array_fill(0, count($values), '?')) . ')',
@@ -118,13 +128,13 @@ class AdminAttendanceService
             throw $e;
         }
 
-        return $this->status($adminId, $tanggal);
+        return $this->status($adminId, $tanggal, $companyId);
     }
 
     /**
      * Check-out Admin HR.
      */
-    public function checkOut($adminId, $waktuLokal, $latitude, $longitude, $selfie = null)
+    public function checkOut($adminId, $waktuLokal, $latitude, $longitude, $selfie = null, $companyId = null)
     {
         if (!$adminId) {
             throw new InvalidArgumentException('Identitas Admin HR tidak valid');
@@ -141,10 +151,13 @@ class AdminAttendanceService
 
         $this->db->beginTransaction();
         try {
-            $row = $this->db->selectOne(
-                'SELECT id, waktu_pulang FROM admin_attendances WHERE admin_id = ? AND tanggal = ? FOR UPDATE',
-                array((int)$adminId, $tanggal)
-            );
+            $rowSql = 'SELECT id, waktu_pulang FROM admin_attendances WHERE admin_id = ? AND tanggal = ?';
+            $rowParams = array((int)$adminId, $tanggal);
+            if ($companyId !== null) {
+                $rowSql .= ' AND company_id = ?';
+                $rowParams[] = (int)$companyId;
+            }
+            $row = $this->db->selectOne($rowSql . ' FOR UPDATE', $rowParams);
             if (!$row) {
                 $this->db->rollBack();
                 throw new RuntimeException('Anda belum melakukan absen masuk pada tanggal tersebut');
@@ -171,11 +184,13 @@ class AdminAttendanceService
             }
             $values[] = (int)$row['id'];
             $values[] = (int)$adminId;
-            $stmt = $this->db->run(
-                'UPDATE admin_attendances SET ' . implode(', ', $updates) .
-                ' WHERE id = ? AND admin_id = ? AND waktu_pulang IS NULL',
-                $values
-            );
+            $updateSql = 'UPDATE admin_attendances SET ' . implode(', ', $updates) .
+                ' WHERE id = ? AND admin_id = ? AND waktu_pulang IS NULL';
+            if ($companyId !== null) {
+                $updateSql .= ' AND company_id = ?';
+                $values[] = (int)$companyId;
+            }
+            $stmt = $this->db->run($updateSql, $values);
             if ($stmt->rowCount() === 0) {
                 $this->db->rollBack();
                 throw new RuntimeException('Anda sudah absen pulang hari ini');

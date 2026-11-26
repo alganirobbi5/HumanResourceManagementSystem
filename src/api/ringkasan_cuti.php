@@ -11,8 +11,9 @@ require_once __DIR__ . '/../service/LeaveLeaderService.php';
 $user = Auth::requireApi();
 $userId = Auth::userId();
 $isHr = Auth::isHr();
+$companyId = Auth::companyId();
 $leaders = new LeaveLeaderService();
-$isLeader = !$isHr && $leaders->isLeader($userId);
+$isLeader = !$isHr && $leaders->isLeader($userId, $companyId);
 
 $bulan = isset($_GET['bulan']) && $_GET['bulan'] !== ''
     ? (int) $_GET['bulan']
@@ -54,6 +55,10 @@ try {
 
     $scopeFilter = '';
     $params = array($bulan, $tahun);
+    if ($companyId !== null) {
+        $scopeFilter = ' AND company_id = ?';
+        $params[] = (int)$companyId;
+    }
     $leaderColumn = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'leader_user_id'");
     $hasLeaderColumn = $leaderColumn && $leaderColumn->fetch();
     if (!$isHr && $isLeader && $hasLeaderColumn) {

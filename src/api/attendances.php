@@ -10,6 +10,7 @@ require_once __DIR__ . '/../service/RateLimiter.php';
 $user = Auth::requireApi();
 $method = $_SERVER['REQUEST_METHOD'];
 $service = new AttendanceService();
+$companyId = Auth::companyId();
 
 if ($method === 'GET') {
     $scope = isset($_GET['scope']) ? $_GET['scope'] : 'me';
@@ -19,7 +20,7 @@ if ($method === 'GET') {
         if ($user['role'] !== 'hr') {
             Json::error('Anda tidak memiliki izin melihat data absensi seluruh karyawan', 403);
         }
-        $filters = array();
+        $filters = array('company_id' => $companyId);
         if (!empty($_GET['date'])) {
             $filters['date'] = $_GET['date'];
         }
@@ -39,7 +40,7 @@ if ($method === 'GET') {
     if (!$user['employee_id']) {
         Json::error('Akun ini tidak terhubung ke data karyawan', 400);
     }
-    Json::ok('OK', $service->mine($user['employee_id'], $page));
+    Json::ok('OK', $service->mine($user['employee_id'], $page, 10, $companyId));
 }
 
 if ($method === 'POST') {
@@ -57,7 +58,7 @@ if ($method === 'POST') {
     $requestId = isset($data['request_id']) ? preg_replace('/[^a-zA-Z0-9\-_]/', '', (string)$data['request_id']) : null;
 
     try {
-        $attendance = $service->create($user['employee_id'], $latitude, $longitude, $gpsAccuracy, $requestId);
+        $attendance = $service->create($user['employee_id'], $latitude, $longitude, $gpsAccuracy, $requestId, $companyId);
         Json::ok('Absensi berhasil disimpan', array('data' => $attendance));
     } catch (InvalidArgumentException $e) {
         Json::error($e->getMessage(), 422);
@@ -67,3 +68,4 @@ if ($method === 'POST') {
 }
 
 Json::error('Method tidak diizinkan', 405);
+

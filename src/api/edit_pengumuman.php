@@ -16,6 +16,7 @@ require_once __DIR__ . '/../common/Json.php';
 
 // Hanya HR yang boleh mengubah pengumuman.
 $user = Auth::requireApiHr();
+$companyId = Auth::companyId();
 
 $data = json_decode(file_get_contents("php://input"));
 
@@ -50,16 +51,24 @@ try {
         if (!$check['ok']) {
             Json::error($check['message'], 422);
         }
-        $stmt = $pdo->prepare(
-            "UPDATE notices SET subject = ?, description = ?, attachment = ?, update_by = ?, update_date = NOW() WHERE id = ?"
-        );
-        $stmt->execute([$title, $message, $check['value'], $updateBy, $id]);
+        $updateSql = "UPDATE notices SET subject = ?, description = ?, attachment = ?, update_by = ?, update_date = NOW() WHERE id = ?";
+        $updateParams = array($title, $message, $check['value'], $updateBy, $id);
+        if ($companyId !== null) {
+            $updateSql .= ' AND (company_id = ? OR company_id IS NULL)';
+            $updateParams[] = (int)$companyId;
+        }
+        $stmt = $pdo->prepare($updateSql);
+        $stmt->execute($updateParams);
     } else {
         // Tanpa lampiran baru, nilai attachment lama tidak diubah.
-        $stmt = $pdo->prepare(
-            "UPDATE notices SET subject = ?, description = ?, update_by = ?, update_date = NOW() WHERE id = ?"
-        );
-        $stmt->execute([$title, $message, $updateBy, $id]);
+        $updateSql = "UPDATE notices SET subject = ?, description = ?, update_by = ?, update_date = NOW() WHERE id = ?";
+        $updateParams = array($title, $message, $updateBy, $id);
+        if ($companyId !== null) {
+            $updateSql .= ' AND (company_id = ? OR company_id IS NULL)';
+            $updateParams[] = (int)$companyId;
+        }
+        $stmt = $pdo->prepare($updateSql);
+        $stmt->execute($updateParams);
     }
 
     if ($stmt->rowCount() === 0) {

@@ -19,7 +19,7 @@ Auth::requireApiHr();
 
 try {
     $service = new LeaveQuotaService(DBConnection::get());
-    Json::ok('OK', array('data' => $service->employeesWithQuota()));
+    Json::ok('OK', array('data' => $service->employeesWithQuota(Auth::companyId())));
 } catch (Exception $e) {
     Json::error('Gagal memuat daftar kuota cuti karyawan', 500);
 }

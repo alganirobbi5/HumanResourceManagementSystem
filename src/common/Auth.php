@@ -116,7 +116,10 @@ class Auth
             'username' => $_SESSION['admin_name'],
             'role' => 'hr',
             'display_name' => $_SESSION['admin_name'],
-            'employee_id' => null 
+            'employee_id' => null,
+            'company_id' => isset($_SESSION['company_id']) ? (int)$_SESSION['company_id'] : null,
+            'company_code' => isset($_SESSION['company_code']) ? $_SESSION['company_code'] : null,
+            'company_name' => isset($_SESSION['company_name']) ? $_SESSION['company_name'] : null
         ];
         return self::$profile;
     }
@@ -170,13 +173,28 @@ class Auth
         }
 
         $db = new DBConnection();
+        $companySelect = ', NULL AS company_id, NULL AS company_code, NULL AS company_name';
+        $companyJoin = '';
+        try {
+            if ($db->getPdo()->query("SHOW TABLES LIKE 'companies'")->fetchColumn()) {
+                $userCompany = $db->getPdo()->query("SHOW COLUMNS FROM users LIKE 'company_id'")->fetchColumn();
+                $employeeCompany = $db->getPdo()->query("SHOW COLUMNS FROM employees LIKE 'company_id'")->fetchColumn();
+                $companyColumn = $userCompany ? 'u.company_id' : ($employeeCompany ? 'e.company_id' : 'NULL');
+                $companySelect = ', ' . $companyColumn . ' AS company_id, c.company_code, c.company_name';
+                $companyJoin = ' LEFT JOIN companies c ON c.id = ' . $companyColumn;
+            }
+        } catch (PDOException $e) {
+            $companySelect = ', NULL AS company_id, NULL AS company_code, NULL AS company_name';
+            $companyJoin = '';
+        }
         $row = $db->selectOne(
-            'SELECT u.id, u.username, u.role, u.employee_id, u.is_active,
+            'SELECT u.id, u.username, u.role, u.employee_id, u.is_active' . $companySelect . ',
                     e.first_name, e.last_name, e.department_id, e.designation_id,
                     e.user_name AS employee_nik,
                     d.name AS department_name, dg.title AS designation_name
              FROM users u
-             LEFT JOIN employees e ON e.id = u.employee_id
+             LEFT JOIN employees e ON e.id = u.employee_id'
+            . $companyJoin . '
              LEFT JOIN departments d ON d.id = e.department_id
              LEFT JOIN employee_designations dg ON dg.id = e.designation_id
              WHERE u.id = ? AND u.is_active = 1',
@@ -205,6 +223,9 @@ class Auth
         $_SESSION['user_id'] = (int)$row['id'];
         $_SESSION['user_role'] = $row['role'];
         $_SESSION['employee_id'] = $row['employee_id'] !== null ? (int)$row['employee_id'] : null;
+        $_SESSION['company_id'] = $row['company_id'] !== null ? (int)$row['company_id'] : null;
+        $_SESSION['company_code'] = $row['company_code'];
+        $_SESSION['company_name'] = $row['company_name'];
         $_SESSION['display_name'] = $row['display_name'];
 
         self::$profile = $row;
@@ -246,6 +267,42 @@ class Auth
     {
         $u = self::identify();
         return $u && $u['role'] === 'hr';
+    }
+
+    public static function isSuperAdmin()
+    {
+        $u = self::identify();
+        return $u && $u['role'] === 'super_admin';
+    }
+
+    public static function companyId()
+    {
+        $u = self::identify();
+        if (!$u || !isset($u['company_id']) || $u['company_id'] === null) {
+            return null;
+        }
+        return (int)$u['company_id'];
+    }
+
+    public static function companyCode()
+    {
+        $u = self::identify();
+        return $u && isset($u['company_code']) ? $u['company_code'] : null;
+    }
+
+    public static function companyName()
+    {
+        $u = self::identify();
+        return $u && isset($u['company_name']) ? $u['company_name'] : null;
+    }
+
+    public static function requireApiSuperAdmin()
+    {
+        $u = self::requireApi();
+        if (!self::isSuperAdmin()) {
+            Json::error('Hanya super_admin yang dapat melakukan aksi ini', 403);
+        }
+        return $u;
     }
 
     public static function requireLogin()

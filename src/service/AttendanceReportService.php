@@ -45,7 +45,7 @@ class AttendanceReportService
         return substr((string)$row['jam_masuk'], 0, 5);
     }
 
-    private function employeeRows()
+    private function employeeRows($companyId = null)
     {
         $jamMasukKerja = $this->jamMasukKerja();
         $columns = array('a.id', 'a.employee_id', 'a.date', 'a.clock_in', 'a.clock_out',
@@ -84,12 +84,19 @@ class AttendanceReportService
         if ($this->hasTable('employee_designations')) {
             $sql .= ' LEFT JOIN employee_designations dg ON dg.id = e.designation_id';
         }
+        $params = array();
         if ($this->hasColumn('attendances', 'deleted_at')) {
             $sql .= ' WHERE a.deleted_at IS NULL';
         }
+        if ($companyId !== null) {
+            $sql .= ($this->hasColumn('attendances', 'deleted_at') ? ' AND' : ' WHERE') . ' a.company_id = ?';
+            $params[] = (int)$companyId;
+        }
         $sql .= ' ORDER BY a.date DESC, a.clock_in DESC, a.id DESC';
 
-        $rows = $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $result = array();
         foreach ($rows as $row) {
             $nama = trim((string)$row['first_name'] . ' ' . (string)$row['last_name']);
@@ -136,7 +143,7 @@ class AttendanceReportService
         return $result;
     }
 
-    private function adminRows()
+    private function adminRows($companyId = null)
     {
         if (!$this->hasTable('admin_attendances')) {
             return array();
@@ -157,9 +164,16 @@ class AttendanceReportService
         if ($this->hasColumn('users', 'admin_id')) {
             $sql .= ' LEFT JOIN users u ON u.admin_id = aa.admin_id';
         }
+        $params = array();
+        if ($companyId !== null) {
+            $sql .= ' WHERE aa.company_id = ?';
+            $params[] = (int)$companyId;
+        }
         $sql .= ' ORDER BY aa.tanggal DESC, aa.waktu_masuk DESC, aa.id DESC';
 
-        $rows = $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $result = array();
         foreach ($rows as $row) {
             $nama = trim((string)(isset($row['admin_name']) ? $row['admin_name'] : ''));
@@ -210,7 +224,9 @@ class AttendanceReportService
 
     public function all(array $filters = array())
     {
-        $rows = array_merge($this->employeeRows(), $this->adminRows());
+        $companyId = isset($filters['company_id']) && $filters['company_id'] !== null
+            ? (int)$filters['company_id'] : null;
+        $rows = array_merge($this->employeeRows($companyId), $this->adminRows($companyId));
         $tanggal = isset($filters['tanggal']) ? trim((string)$filters['tanggal']) : '';
         if ($tanggal === '' && isset($filters['date'])) {
             $tanggal = trim((string)$filters['date']);

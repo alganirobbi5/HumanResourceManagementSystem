@@ -7,6 +7,7 @@ require_once __DIR__ . '/../common/Config.php';
 $user = Auth::requireApi();
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$companyId = Auth::companyId();
 if (!$id) {
     Json::error('Absensi tidak valid', 422);
 }
@@ -40,11 +41,14 @@ if ($scope === 'admin') {
     if ($db->selectOne("SHOW COLUMNS FROM admin_attendances LIKE '" . $mimeColumn . "'")) {
         $mimeSelect = ', ' . $mimeColumn . ' AS selfie_mime_type';
     }
-    $row = $db->selectOne(
-        'SELECT id, admin_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
-         FROM admin_attendances WHERE id = ?',
-        array($id)
-    );
+    $adminSql = 'SELECT id, admin_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
+                 FROM admin_attendances WHERE id = ?';
+    $adminParams = array($id);
+    if ($companyId !== null) {
+        $adminSql .= ' AND company_id = ?';
+        $adminParams[] = (int)$companyId;
+    }
+    $row = $db->selectOne($adminSql, $adminParams);
     if (!$row || empty($row['selfie_path'])) {
         Json::error('Foto absensi tidak ditemukan', 404);
     }
@@ -66,16 +70,20 @@ if ($scope === 'admin') {
     if ($colDeleted) {
         $filterDeleted = ' AND deleted_at IS NULL';
     }
-    $row = $db->selectOne(
-        'SELECT id, employee_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
-         FROM attendances WHERE id = ?' . $filterDeleted,
-        array($id)
-    );
+    $employeeSql = 'SELECT id, employee_id, company_id, ' . $pathColumn . ' AS selfie_path' . $mimeSelect . '
+                    FROM attendances WHERE id = ?' . $filterDeleted;
+    $employeeParams = array($id);
+    if ($companyId !== null) {
+        $employeeSql .= ' AND company_id = ?';
+        $employeeParams[] = (int)$companyId;
+    }
+    $row = $db->selectOne($employeeSql, $employeeParams);
     if (!$row || empty($row['selfie_path'])) {
         Json::error('Foto absensi tidak ditemukan', 404);
     }
     $isOwner = $row['employee_id'] == $user['employee_id'];
-    if (!$isOwner && $user['role'] !== 'hr') {
+    $isSameCompany = $companyId === null || (isset($row['company_id']) && (int)$row['company_id'] === $companyId);
+    if (!$isOwner && ($user['role'] !== 'hr' || !$isSameCompany)) {
         Json::error('Anda tidak berwenang membuka foto ini', 403);
     }
 }

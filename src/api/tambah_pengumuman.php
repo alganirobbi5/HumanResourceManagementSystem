@@ -57,17 +57,22 @@ try {
         $hasAttachment = false;
     }
 
+    $columns = 'subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date';
+    $values = array($title, $message, $tanggal, $waktu, $insertBy, $insertBy);
+    $placeholders = '?, ?, ?, ?, ?, ?, NOW(), ?, NOW()';
     if ($hasAttachment) {
-        $query = "INSERT INTO notices (subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date, attachment)
-                  VALUES (?, ?, ?, ?, 1, ?, NOW(), ?, NOW(), ?)";
-        $stmt = $pdo->prepare($query);
-        $stmt->execute([$title, $message, $tanggal, $waktu, $insertBy, $insertBy, $attachment]);
-    } else {
-        $query = "INSERT INTO notices (subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date)
-                  VALUES (?, ?, ?, ?, 1, ?, NOW(), ?, NOW())";
-        $stmt = $pdo->prepare($query);
-        $stmt->execute([$title, $message, $tanggal, $waktu, $insertBy, $insertBy]);
+        $columns .= ', attachment';
+        $placeholders .= ', ?';
+        $values[] = $attachment;
     }
+    $companyId = Auth::companyId();
+    if ($companyId !== null) {
+        $columns .= ', company_id';
+        $placeholders .= ', ?';
+        $values[] = (int)$companyId;
+    }
+    $stmt = $pdo->prepare('INSERT INTO notices (' . $columns . ') VALUES (' . $placeholders . ')');
+    $stmt->execute($values);
 
     http_response_code(201);
     echo json_encode([

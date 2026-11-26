@@ -37,6 +37,17 @@ if (!$ids || (float)$days <= 0) {
 }
 
 try {
+    $companyId = Auth::companyId();
+    if ($companyId !== null) {
+        $pdo = DBConnection::pdo();
+        foreach ($ids as $id) {
+            $check = $pdo->prepare('SELECT id FROM employees WHERE id = ? AND company_id = ? LIMIT 1');
+            $check->execute(array($id, $companyId));
+            if (!$check->fetch()) {
+                Json::error('Karyawan tidak ditemukan', 404);
+            }
+        }
+    }
     $service = new LeaveQuotaService(DBConnection::get());
     foreach ($ids as $id) {
         if ($mode === 'kurang') {

@@ -40,12 +40,16 @@ if (isset($_GET['meta']) && (string)$_GET['meta'] === '1') {
     ));
 }
 
-$rows = $db->selectAll(
-    'SELECT id, first_name, last_name, user_name AS nik, department_id, designation_id
-     FROM employees
-     WHERE status = 1
-     ORDER BY first_name, last_name'
-);
+$companyId = Auth::companyId();
+$employeeSql = 'SELECT id, first_name, last_name, user_name AS nik, department_id, designation_id
+                FROM employees WHERE status = 1';
+$employeeParams = array();
+if ($companyId !== null) {
+    $employeeSql .= ' AND company_id = ?';
+    $employeeParams[] = $companyId;
+}
+$employeeSql .= ' ORDER BY first_name, last_name';
+$rows = $db->selectAll($employeeSql, $employeeParams);
 
 $data = array();
 foreach ($rows as $row) {
