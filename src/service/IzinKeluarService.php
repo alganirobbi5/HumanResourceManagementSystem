@@ -100,7 +100,7 @@ class IzinKeluarService
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    public function createRequest($employeeId, array $input, $companyId = null)
+    public function createRequest($employeeId, array $input, $companyId = null, $currentUserId = null)
     {
         $employeeId = (int)$employeeId;
         if ($employeeId <= 0) {
@@ -108,7 +108,10 @@ class IzinKeluarService
         }
 
         $leaderUserId = isset($input['leader_user_id']) ? (int)$input['leader_user_id'] : 0;
-        if ($leaderUserId <= 0 || !$this->leaders->isLeader($leaderUserId)) {
+        if ($currentUserId !== null && $leaderUserId === (int)$currentUserId) {
+            throw new InvalidArgumentException('Tidak dapat memilih diri sendiri sebagai Leader persetujuan', 422);
+        }
+        if ($leaderUserId <= 0 || !$this->leaders->isLeader($leaderUserId, $companyId)) {
             throw new InvalidArgumentException('Leader persetujuan izin keluar tidak valid', 422);
         }
 

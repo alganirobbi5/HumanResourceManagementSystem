@@ -210,7 +210,7 @@ class LeaveService
         return $stmt && $stmt->fetch() !== false;
     }
 
-    public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId, $leaderUserId = null, $companyId = null)
+    public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId, $leaderUserId = null, $companyId = null, $currentUserId = null)
     {
         $reason = trim((string)$reason);
         if ($reason === '') {
@@ -223,6 +223,9 @@ class LeaveService
             throw new InvalidArgumentException('Nama pengganti wajib dipilih');
         }
         $leaderUserId = (int)$leaderUserId;
+        if ($currentUserId !== null && $leaderUserId === (int)$currentUserId) {
+            throw new InvalidArgumentException('Tidak dapat memilih diri sendiri sebagai Leader persetujuan', 422);
+        }
         if ($leaderUserId <= 0 || !$this->leaders->isLeader($leaderUserId, $companyId)) {
             throw new InvalidArgumentException('Leader persetujuan cuti tidak valid', 422);
         }

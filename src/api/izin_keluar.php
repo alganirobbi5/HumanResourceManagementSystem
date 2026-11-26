@@ -61,8 +61,12 @@ if ($method === 'POST') {
         Json::error('Akun ini tidak terhubung ke data karyawan', 400);
     }
     $data = Json::readRequest();
+    $leaderUserId = isset($data['leader_user_id']) ? (int)$data['leader_user_id'] : 0;
+    if ($leaderUserId > 0 && $leaderUserId === (int)$user['id']) {
+        Json::error('Tidak dapat memilih diri sendiri sebagai Leader persetujuan', 422);
+    }
     try {
-        $row = $service->createRequest((int)$user['employee_id'], $data, $companyId);
+        $row = $service->createRequest((int)$user['employee_id'], $data, $companyId, (int)$user['id']);
         Json::ok('Pengajuan izin keluar berhasil disimpan dan menunggu persetujuan', array('data' => $row));
     } catch (InvalidArgumentException $e) {
         Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);

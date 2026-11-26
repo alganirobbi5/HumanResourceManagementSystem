@@ -48,6 +48,9 @@ if (!$user['employee_id']) {
 $data = Json::readRequest();
 $leaderUserId = isset($data['leader_user_id']) ? (int)$data['leader_user_id'] : 0;
 $leaderService = new LeaveLeaderService();
+if ($leaderUserId > 0 && $leaderUserId === (int)$user['id']) {
+    Json::error('Tidak dapat memilih diri sendiri sebagai Leader persetujuan', 422);
+}
 if ($leaderUserId <= 0 || !$leaderService->isLeader($leaderUserId, $companyId)) {
     Json::error('Leader persetujuan cuti tidak valid', 422);
 }

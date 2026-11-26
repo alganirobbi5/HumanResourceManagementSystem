@@ -85,6 +85,10 @@ if ($method === 'POST') {
         if (!RateLimiter::allow('leave_create', Config::RATE_LIMIT_LEAVE_SECONDS)) {
             Json::error('Terlalu sering mengirim pengajuan, tunggu beberapa saat', 429);
         }
+        $leaderUserId = isset($body['leader_user_id']) ? (int)$body['leader_user_id'] : 0;
+        if ($leaderUserId > 0 && $leaderUserId === (int)$user['id']) {
+            Json::error('Tidak dapat memilih diri sendiri sebagai Leader persetujuan', 422);
+        }
         try {
             $row = $service->createRequest(
                 $user['employee_id'],
@@ -93,7 +97,8 @@ if ($method === 'POST') {
                 isset($body['end_date']) ? $body['end_date'] : '',
                 isset($body['replacement_employee_id']) ? (int)$body['replacement_employee_id'] : 0,
                 isset($body['leader_user_id']) ? (int)$body['leader_user_id'] : 0,
-                $companyId
+                $companyId,
+                (int)$user['id']
             );
             Json::ok('Pengajuan cuti berhasil disimpan dan menunggu persetujuan', array('data' => $row));
         } catch (InvalidArgumentException $e) {

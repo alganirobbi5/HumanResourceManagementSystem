@@ -5,6 +5,7 @@ require_once __DIR__ . '/../common/DBConnection.php';
 class LeaveLeaderService
 {
     const NOT_LEADER_MESSAGE = 'Hanya user yang terdaftar sebagai Leader persetujuan cuti yang dapat menyetujui atau menolak pengajuan.';
+    const PENDING_REQUESTS_MESSAGE = 'Leader masih memiliki pengajuan menunggu persetujuan';
 
     private $pdo;
 
@@ -27,15 +28,20 @@ class LeaveLeaderService
                     employee_id INT(11) NULL DEFAULT NULL,
                     keterangan VARCHAR(100) NULL DEFAULT NULL,
                     jabatan VARCHAR(150) NULL DEFAULT NULL,
+                    company_id INT(11) NULL DEFAULT NULL,
                     added_by INT(11) NOT NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (id),
                     KEY idx_leave_leaders_employee (employee_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
             }
-            if ($this->pdo->query("SHOW TABLES LIKE 'leave_leaders'")->fetchColumn()
-                && !$this->pdo->query("SHOW COLUMNS FROM leave_leaders LIKE 'jabatan'")->fetch()) {
-                $this->pdo->exec('ALTER TABLE leave_leaders ADD COLUMN jabatan VARCHAR(150) NULL DEFAULT NULL AFTER keterangan');
+            if ($this->pdo->query("SHOW TABLES LIKE 'leave_leaders'")->fetchColumn()) {
+                if (!$this->pdo->query("SHOW COLUMNS FROM leave_leaders LIKE 'jabatan'")->fetch()) {
+                    $this->pdo->exec('ALTER TABLE leave_leaders ADD COLUMN jabatan VARCHAR(150) NULL DEFAULT NULL AFTER keterangan');
+                }
+                if (!$this->pdo->query("SHOW COLUMNS FROM leave_leaders LIKE 'company_id'")->fetch()) {
+                    $this->pdo->exec('ALTER TABLE leave_leaders ADD COLUMN company_id INT(11) NULL DEFAULT NULL AFTER jabatan');
+                }
             }
             $columns = array(
                 'leader_user_id' => 'INT(11) NULL DEFAULT NULL',
@@ -153,31 +159,70 @@ class LeaveLeaderService
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
+    private function hasPendingRequests($leaderUserId, $companyId = null)
+    {
+        $checks = array(
+            array('leaves', "status IN (1, 'pending')"),
+            array('leave_requests', "status = 'pending'"),
+            array('izin_keluar', "status = 'pending'"),
+        );
+        foreach ($checks as $check) {
+            $table = $check[0];
+            if (!$this->pdo->query("SHOW TABLES LIKE '" . $table . "'")->fetchColumn()) {
+                continue;
+            }
+            try {
+                $sql = 'SELECT 1 FROM ' . $table . ' WHERE leader_user_id = ? AND ' . $check[1];
+                $params = array((int)$leaderUserId);
+                if ($companyId !== null) {
+                    $sql .= ' AND company_id = ?';
+                    $params[] = (int)$companyId;
+                }
+                $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
+                $stmt->execute($params);
+                if ($stmt->fetchColumn()) {
+                    return true;
+                }
+            } catch (PDOException $e) {
+                continue;
+            }
+        }
+        return false;
+    }
+
     public function removeLeader($leaderIdOrUserId, $companyId = null)
     {
         $value = (int)$leaderIdOrUserId;
-        $sql = 'SELECT user_id FROM leave_leaders WHERE id = ?';
-        $params = array($value);
+        $findSql = 'SELECT id, user_id FROM leave_leaders WHERE id = ?';
+        $findParams = array($value);
         if ($companyId !== null) {
-            $sql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
-            $params[] = (int)$companyId;
+            $findSql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
+            $findParams[] = (int)$companyId;
         }
-        $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
-        $stmt->execute($params);
+        $stmt = $this->pdo->prepare($findSql . ' LIMIT 1');
+        $stmt->execute($findParams);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row) {
-            $this->pdo->prepare('DELETE FROM leave_leaders WHERE id = ?')->execute([$value]);
-            return true;
+
+        if (!$row) {
+            $findSql = 'SELECT id, user_id FROM leave_leaders WHERE user_id = ?';
+            $findParams = array($value);
+            if ($companyId !== null) {
+                $findSql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
+                $findParams[] = (int)$companyId;
+            }
+            $stmt = $this->pdo->prepare($findSql . ' LIMIT 1');
+            $stmt->execute($findParams);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
         }
-        $deleteSql = 'DELETE FROM leave_leaders WHERE user_id = ?';
-        $deleteParams = array($value);
-        if ($companyId !== null) {
-            $deleteSql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
-            $deleteParams[] = (int)$companyId;
+        if (!$row) {
+            return false;
         }
-        $stmt = $this->pdo->prepare($deleteSql);
-        $stmt->execute($deleteParams);
-        return $stmt->rowCount() > 0;
+
+        if ($this->hasPendingRequests((int)$row['user_id'], $companyId)) {
+            throw new RuntimeException(self::PENDING_REQUESTS_MESSAGE, 409);
+        }
+        $this->pdo->prepare('DELETE FROM leave_leaders WHERE id = ?')->execute(array((int)$row['id']));
+        return true;
     }
 
     public function isLeader($userId, $companyId = null)
