@@ -192,6 +192,12 @@ class LeaveService
         return $stmt && $stmt->fetch() !== false;
     }
 
+    private function hasLeaveColumn($column)
+    {
+        $stmt = $this->db->getPdo()->query("SHOW COLUMNS FROM leaves LIKE '" . $column . "'");
+        return $stmt && $stmt->fetch() !== false;
+    }
+
     public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId, $leaderUserId = null)
     {
         $reason = trim((string)$reason);
@@ -305,6 +311,7 @@ class LeaveService
         }
         return 'SELECT lr.*,
                        e.first_name, e.last_name, e.user_name AS employee_nik,
+                       CONCAT_WS(" ", e.first_name, e.last_name) AS employee_name,
                        e.department_id, e.designation_id,
                        d.name AS department_name, dg.title AS designation_name,
                        r.first_name AS replacement_first_name, r.last_name AS replacement_last_name,
@@ -320,9 +327,84 @@ class LeaveService
                 . $leaderJoin . $extraJoin;
     }
 
+    /**
+     * Daftar pengajuan pada tabel leaves (alur mobile) dengan filter scope:
+     * leader (leader_user_id), mine (employee_id), atau all (tanpa filter).
+     */
+    public function listLeaves($scope, $userId = null)
+    {
+        $fields = 'l.id, l.employee_id, l.type, l.leave_from, l.leave_to, l.status,
+                   FROM_UNIXTIME(l.created_at) AS created_at,
+                   e.first_name, e.last_name, e.user_name,
+                   CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap';
+        foreach (array('reason', 'comment', 'catatan_leader', 'approved_by_name', 'decided_at') as $column) {
+            if ($this->hasLeaveColumn($column)) {
+                $fields .= ', l.' . $column;
+            }
+        }
+        foreach (array('leader_user_id', 'approved_by_user_id') as $column) {
+            if ($this->hasLeaveColumn($column)) {
+                $fields .= ', l.' . $column;
+            }
+        }
+
+        $leaderJoin = '';
+        if ($this->hasLeaveColumn('leader_user_id')) {
+            $fields .= ', CONCAT_WS(" ", le.first_name, le.last_name) AS target_leader_name';
+            $leaderJoin = ' LEFT JOIN users lu ON lu.id = l.leader_user_id
+                            LEFT JOIN employees le ON le.id = lu.employee_id';
+        }
+
+        $where = array();
+        $params = array();
+        if ($this->hasLeaveColumn('deleted_at')) {
+            $where[] = 'l.deleted_at IS NULL';
+        }
+        if ($scope === 'leader') {
+            $where[] = 'l.leader_user_id = ?';
+            $params[] = (int)$userId;
+        } elseif ($scope === 'mine') {
+            $where[] = 'l.employee_id = ?';
+            $params[] = (int)$userId;
+        }
+        $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+
+        $stmt = $this->db->getPdo()->prepare(
+            'SELECT ' . $fields . ' FROM leaves l
+             LEFT JOIN employees e ON e.id = l.employee_id'
+            . $leaderJoin . $whereSql . ' ORDER BY l.id DESC'
+        );
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function detail($id)
     {
         return $this->db->selectOne($this->baseSelect(' WHERE lr.id = ?'), array((int)$id));
+    }
+
+    public function forLeader($leaderUserId, $page = 1, $perPage = 10)
+    {
+        $page = max(1, (int)$page);
+        $perPage = min(50, max(1, (int)$perPage));
+        $offset = ($page - 1) * $perPage;
+
+        $totalRow = $this->db->selectOne(
+            'SELECT COUNT(id) AS total FROM leave_requests WHERE leader_user_id = ?',
+            array((int)$leaderUserId)
+        );
+        $rows = $this->db->selectAll(
+            $this->baseSelect(' WHERE lr.leader_user_id = ?')
+            . ' ORDER BY lr.submitted_at DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset,
+            array((int)$leaderUserId)
+        );
+
+        return array(
+            'items' => $rows,
+            'total' => $totalRow ? (int)$totalRow['total'] : 0,
+            'page' => $page,
+            'per_page' => $perPage
+        );
     }
 
     public function mine($employeeId, $page = 1, $perPage = 10)

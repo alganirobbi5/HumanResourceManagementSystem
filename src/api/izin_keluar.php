@@ -28,26 +28,31 @@ if ($method === 'GET') {
     $isHr = Auth::isHr();
     $isLeader = $leaders->isLeader($userId);
 
+    if ($scope === 'leader') {
+        if (!$isLeader) {
+            Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
+        }
+        Json::ok('OK', array('data' => $service->listForLeader($userId, $status, $tanggal)));
+    }
+
     if ($scope === 'all') {
+        if (!$isHr) {
+            Json::error('Anda tidak memiliki izin melihat seluruh pengajuan izin keluar', 403);
+        }
+        Json::ok('OK', array('data' => $service->listAll($status, $tanggal)));
+    }
+
+    if ($scope === 'mine' || $scope === 'me') {
+        if ($user['employee_id']) {
+            Json::ok('OK', array('data' => $service->listByEmployee((int)$user['employee_id'], $status)));
+        }
         if ($isHr) {
             Json::ok('OK', array('data' => $service->listAll($status, $tanggal)));
         }
-        if ($isLeader) {
-            Json::ok('OK', array('data' => $service->listForLeader($userId, $status, $tanggal)));
-        }
-        Json::error('Anda tidak memiliki izin melihat seluruh pengajuan izin keluar', 403);
+        Json::error('Akun ini tidak terhubung ke data karyawan', 400);
     }
 
-    if ($isLeader) {
-        Json::ok('OK', array('data' => $service->listForLeader($userId, $status, $tanggal)));
-    }
-    if ($user['employee_id']) {
-        Json::ok('OK', array('data' => $service->listByEmployee((int)$user['employee_id'], $status)));
-    }
-    if ($isHr) {
-        Json::ok('OK', array('data' => $service->listAll($status, $tanggal)));
-    }
-    Json::error('Akun ini tidak terhubung ke data karyawan', 400);
+    Json::error('Parameter scope tidak dikenal', 422);
 }
 
 if ($method === 'POST') {

@@ -16,7 +16,7 @@ require_once __DIR__ . '/../service/IzinKeluarService.php';
 require_once __DIR__ . '/../service/LeaveLeaderService.php';
 
 $user = Auth::requireApi();
-$leaderUserId = Auth::userId();
+$leaderUserId = (int)$user['id'];
 $leaders = new LeaveLeaderService();
 if (!$leaders->isLeader($leaderUserId)) {
     Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);

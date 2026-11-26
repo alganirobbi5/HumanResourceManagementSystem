@@ -79,6 +79,7 @@ class IzinKeluarService
     private function baseSelect()
     {
         return 'SELECT i.*, e.first_name, e.last_name, e.user_name, e.department_id,
+                CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap,
                 CONCAT_WS(" ", lu.first_name, lu.last_name) AS target_leader_name
                 FROM izin_keluar i
                 LEFT JOIN employees e ON e.id = i.employee_id
