@@ -29,7 +29,8 @@ if ($isHrAdmin) {
             $waktuLokal,
             isset($data['latitude']) ? $data['latitude'] : null,
             isset($data['longitude']) ? $data['longitude'] : null,
-            isset($data['selfie']) ? $data['selfie'] : null
+            isset($data['selfie']) ? $data['selfie'] : null,
+            Auth::companyId()
         );
         $totalJam = null;
         if ($status['jam_masuk'] && $status['jam_pulang']) {

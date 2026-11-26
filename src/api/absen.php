@@ -36,7 +36,8 @@ if ($isHrAdmin) {
             isset($data['longitude']) ? $data['longitude'] : null,
             isset($data['gps_accuracy']) ? $data['gps_accuracy'] : null,
             $requestId,
-            isset($data['selfie']) ? $data['selfie'] : null
+            isset($data['selfie']) ? $data['selfie'] : null,
+            $companyId
         );
         Json::out(array(
             'success' => true,
@@ -82,8 +83,9 @@ $waktu_sekarang = Config::companyNow()->format('H:i:s');
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-$stmtLokasi = $pdo->query("SELECT * FROM office_locations");
-$lokasi_kantor = $stmtLokasi->fetchAll(PDO::FETCH_ASSOC);
+require_once __DIR__ . '/../service/CompanyMasterService.php';
+$master = new CompanyMasterService($pdo);
+$lokasi_kantor = $master->officeLocations($companyId);
 
 $is_dalam_radius = false;
 foreach ($lokasi_kantor as $lokasi) {

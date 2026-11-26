@@ -68,7 +68,7 @@ class AdminAttendanceService
 
         $latitude = $this->validateCoordinate($latitude, -90, 90, 'latitude');
         $longitude = $this->validateCoordinate($longitude, -180, 180, 'longitude');
-        $this->assertInsideOffice($latitude, $longitude);
+        $this->assertInsideOffice($latitude, $longitude, $companyId);
 
         $tanggal = Config::companyToday();
         $now = Config::companyNow();
@@ -146,7 +146,7 @@ class AdminAttendanceService
 
         $latitude = $this->validateCoordinate($latitude, -90, 90, 'latitude');
         $longitude = $this->validateCoordinate($longitude, -180, 180, 'longitude');
-        $this->assertInsideOffice($latitude, $longitude);
+        $this->assertInsideOffice($latitude, $longitude, $companyId);
         $selfieData = AttendanceService::storeSelfie($selfie, $tanggal, $adminId, 'selfie_pulang', 'admin');
 
         $this->db->beginTransaction();
@@ -219,9 +219,15 @@ class AdminAttendanceService
         return $value;
     }
 
-    private function assertInsideOffice($latitude, $longitude)
+    private function assertInsideOffice($latitude, $longitude, $companyId = null)
     {
-        $lokasi = $this->db->selectAll('SELECT latitude, longitude, radius_meter FROM office_locations');
+        $sql = 'SELECT latitude, longitude, radius_meter FROM office_locations';
+        $params = array();
+        if ($companyId !== null) {
+            $sql .= ' WHERE company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $lokasi = $this->db->selectAll($sql, $params);
         foreach ($lokasi as $l) {
             $lat = (float)$l['latitude'];
             $lng = (float)$l['longitude'];
