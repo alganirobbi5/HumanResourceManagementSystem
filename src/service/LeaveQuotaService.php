@@ -153,6 +153,64 @@ class LeaveQuotaService
         }
     }
 
+    /** Kurangi kuota cuti karyawan. Sisa kuota tidak boleh minus. */
+    public function deductDays($employeeId, $days)
+    {
+        $schema = $this->schema();
+        if (!$schema) {
+            throw new RuntimeException('Skema kuota cuti tidak tersedia', 500);
+        }
+        $days = (float)$days;
+        if ($employeeId <= 0 || $days <= 0) {
+            throw new InvalidArgumentException('Karyawan dan jumlah hari wajib diisi', 422);
+        }
+
+        $table = $schema['table'];
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare('SELECT id FROM ' . $table . ' WHERE employee_id = ? LIMIT 1');
+            $stmt->execute([(int)$employeeId]);
+            if ($stmt->fetch()) {
+                $this->pdo->prepare('UPDATE ' . $table . ' SET ' . $schema['remaining'] .
+                    ' = GREATEST(0, ' . $schema['remaining'] . ' - ?) WHERE employee_id = ?')
+                    ->execute(array($days, (int)$employeeId));
+            }
+            $this->syncDeductLeaveBalance($employeeId, $days);
+            $this->pdo->commit();
+            return true;
+        } catch (Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    private function syncDeductLeaveBalance($employeeId, $days)
+    {
+        try {
+            if (!$this->hasTable('leave_balances')) {
+                return;
+            }
+            $year = (int)Config::companyNow()->format('Y');
+            $stmt = $this->pdo->prepare(
+                'SELECT id FROM leave_balances
+                 WHERE employee_id = ? AND leave_type = ? AND entitlement_year = ? LIMIT 1'
+            );
+            $stmt->execute(array((int)$employeeId, Config::LEAVE_TYPE_DEFAULT, $year));
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                $this->pdo->prepare(
+                    'UPDATE leave_balances
+                     SET entitled_days = GREATEST(used_days, entitled_days - ?), updated_at = NOW()
+                     WHERE id = ?'
+                )->execute(array((float)$days, (int)$row['id']));
+            }
+        } catch (PDOException $e) {
+            // Tabel leave_balances opsional; jangan gagalkan update kuota legacy.
+        }
+    }
+
     /**
      * Kuota yang dipakai saat pengajuan/disetujui berada di tabel
      * leave_balances. Jadi penambahan dari menu HR harus masuk ke sana juga

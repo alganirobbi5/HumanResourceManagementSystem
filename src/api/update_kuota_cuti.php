@@ -27,6 +27,10 @@ if (!empty($data['employee_ids']) && is_array($data['employee_ids'])) {
     $ids[] = (int)$data['employee_id'];
 }
 $days = isset($data['tambahan_hari']) ? $data['tambahan_hari'] : (isset($data['days']) ? $data['days'] : 0);
+$mode = isset($data['mode']) ? strtolower(trim((string)$data['mode'])) : 'tambah';
+if ($mode !== 'kurang') {
+    $mode = 'tambah';
+}
 
 if (!$ids || (float)$days <= 0) {
     Json::error('Karyawan dan jumlah hari wajib diisi', 400);
@@ -35,9 +39,16 @@ if (!$ids || (float)$days <= 0) {
 try {
     $service = new LeaveQuotaService(DBConnection::get());
     foreach ($ids as $id) {
-        $service->addDays($id, $days);
+        if ($mode === 'kurang') {
+            $service->deductDays($id, $days);
+        } else {
+            $service->addDays($id, $days);
+        }
     }
-    Json::ok('Kuota cuti berhasil ditambahkan', array('updated' => count($ids)));
+    Json::ok($mode === 'kurang'
+        ? 'Kuota cuti berhasil dikurangi'
+        : 'Kuota cuti berhasil ditambahkan',
+        array('updated' => count($ids), 'mode' => $mode));
 } catch (InvalidArgumentException $e) {
     Json::error('Karyawan dan jumlah hari tidak valid', 422);
 } catch (RuntimeException $e) {
