@@ -5,40 +5,32 @@ require_once __DIR__ . '/../common/Auth.php';
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 
-// Endpoint baca pengumuman bersifat publik (informasi siaran untuk seluruh
-// karyawan). Flutter membaca daftar pengumuman tanpa Bearer Token, sehingga
-// autentikasi tidak diterapkan di sini agar tidak memutus fitur yang sudah
-// berjalan. Endpoint tulis (tambah/edit/hapus) telah dilindungi HR.
+// Endpoint baca pengumuman bersifat publik (siaran untuk seluruh karyawan).
+// Identitas bersifat opsional: bila token valid, daftar difilter per company;
+// bila token tidak ada/kedaluwarsa, tetap tampilkan pengumuman global agar
+// halaman tidak gagal memuat hanya karena sesi lokal yang basi.
+// Endpoint tulis (tambah/edit/hapus) tetap dilindungi HR di file masing-masing.
 
-$user = Auth::requireApi();
-$companyId = Auth::companyId();
+header('Cache-Control: no-store');
+
+$user = Auth::identify();
+$companyId = $user ? Auth::companyId() : null;
+$isSuperAdmin = $user && Auth::isSuperAdmin();
 
 try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Kolom attachment opsional: tetap kompatibel jika migrasi belum dijalankan.
-    $hasAttachment = false;
-    try {
-        $col = $pdo->query("SHOW COLUMNS FROM notices LIKE 'attachment'");
-        $hasAttachment = $col && $col->fetch() !== false;
-        if (!$hasAttachment) {
-            $pdo->exec("ALTER TABLE notices ADD COLUMN attachment LONGTEXT NULL");
-            $hasAttachment = true;
-        }
-    } catch (PDOException $e) {
-        $hasAttachment = false;
-    }
-
     $fields = 'n.id, n.subject AS title, n.description AS message, n.notice_date AS created_at,
                COALESCE(c.company_name, "Semua Perusahaan") AS company_name';
-    if ($hasAttachment) {
+    $col = $pdo->query("SHOW COLUMNS FROM notices LIKE 'attachment'");
+    if ($col && $col->fetch()) {
         $fields .= ', n.attachment';
     }
     $sql = 'SELECT ' . $fields . ' FROM notices n
             LEFT JOIN companies c ON c.id = n.company_id';
     $params = array();
-    if (!Auth::isSuperAdmin()) {
+    if (!$isSuperAdmin) {
         if ($companyId !== null) {
             $sql .= ' WHERE (n.company_id = ? OR n.company_id IS NULL)';
             $params[] = (int)$companyId;
