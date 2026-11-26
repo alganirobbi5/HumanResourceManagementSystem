@@ -6,13 +6,22 @@ try {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Ambil data absensi
-    $query = "SELECT a.date, a.clock_in, a.clock_out, a.status, 
-                     e.first_name, e.last_name 
-              FROM attendances a 
-              LEFT JOIN employees e ON a.employee_id = e.id 
+    // Ambil data absensi (abaikan baris yang dihapus HR / soft delete)
+    $deletedFilter = '';
+    try {
+        if ($pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'")->fetch()) {
+            $deletedFilter = ' WHERE a.deleted_at IS NULL';
+        }
+    } catch (PDOException $e) {
+        $deletedFilter = '';
+    }
+    $query = "SELECT a.date, a.clock_in, a.clock_out, a.status,
+                     e.first_name, e.last_name
+              FROM attendances a
+              LEFT JOIN employees e ON a.employee_id = e.id
+              $deletedFilter
               ORDER BY a.date DESC";
-              
+
     $stmt = $pdo->query($query);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

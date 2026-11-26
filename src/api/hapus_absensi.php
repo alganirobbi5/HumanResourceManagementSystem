@@ -66,7 +66,14 @@ try {
 
     $col = $pdo->query("SHOW COLUMNS FROM attendances LIKE 'deleted_at'");
     if ($col && $col->fetch()) {
-        $stmt = $pdo->prepare("UPDATE attendances SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL");
+        $clear = array('deleted_at = NOW()');
+        foreach (array('selfie_path', 'selfie_out_path') as $column) {
+            $check = $pdo->query("SHOW COLUMNS FROM attendances LIKE '" . $column . "'");
+            if ($check && $check->fetch()) {
+                $clear[] = $column . ' = NULL';
+            }
+        }
+        $stmt = $pdo->prepare("UPDATE attendances SET " . implode(', ', $clear) . " WHERE id = ? AND deleted_at IS NULL");
         $stmt->execute(array($id));
         if ($stmt->rowCount() === 0) {
             Json::error('Data absensi sudah dihapus', 404);
