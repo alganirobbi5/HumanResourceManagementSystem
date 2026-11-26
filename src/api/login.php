@@ -45,19 +45,46 @@ function findOrCreateAdminApiIdentity($pdo, array $admin, $companyId = null)
         }
 
         $adminId = (int)$admin['id'];
+        $preferredUsername = '';
+        foreach (array('username', 'name') as $field) {
+            if (isset($admin[$field]) && trim((string)$admin[$field]) !== '') {
+                $preferredUsername = trim((string)$admin[$field]);
+                break;
+            }
+        }
         $pdo->beginTransaction();
 
         // Kunci baris/kunci unik agar login bersamaan tidak membuat dua identitas.
-        $stmt = $pdo->prepare("SELECT id, is_active FROM users WHERE admin_id = ? FOR UPDATE");
+        $stmt = $pdo->prepare("SELECT id, username, is_active FROM users WHERE admin_id = ? FOR UPDATE");
         $stmt->execute([$adminId]);
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($existing) {
+            // Jangan menimpa username yang sudah valid; perbaiki hanya username
+            // otomatis lama yang berawalan admin_ memakai nama asli dari admins.
+            $currentUsername = (string)$existing['username'];
+            if ($preferredUsername !== '' && $currentUsername !== $preferredUsername
+                && stripos($currentUsername, 'admin_') === 0) {
+                $taken = $pdo->prepare('SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1');
+                $taken->execute(array($preferredUsername, (int)$existing['id']));
+                if (!$taken->fetch()) {
+                    $pdo->prepare('UPDATE users SET username = ? WHERE id = ?')
+                        ->execute(array($preferredUsername, (int)$existing['id']));
+                }
+            }
             $pdo->commit();
             return (int)$existing['is_active'] === 1 ? (int)$existing['id'] : null;
         }
 
-        // Username acak menghindari tabrakan username saat dua request bersamaan.
-        $username = 'admin_' . $adminId . '_' . bin2hex(random_bytes(6));
+        $username = $preferredUsername;
+        if ($username === '') {
+            $username = 'admin_' . $adminId . '_' . bin2hex(random_bytes(6));
+        } else {
+            $taken = $pdo->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+            $taken->execute(array($username));
+            if ($taken->fetch()) {
+                $username = 'admin_' . $adminId . '_' . bin2hex(random_bytes(6));
+            }
+        }
         // Kolom email sengaja tidak dipakai: skema VPS users tidak memilikinya.
         $pdo->prepare(
             "INSERT INTO users (username, password_hash, role, employee_id, admin_id, company_id, is_active)
