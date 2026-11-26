@@ -19,10 +19,7 @@ $isHr = (isset($user['role']) && $user['role'] === 'hr');
 $employee_id_from_client = isset($_GET['employee_id']) ? $_GET['employee_id'] : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $body = json_decode(file_get_contents('php://input'), true);
-    if (!is_array($body)) {
-        $body = $_POST;
-    }
+    $body = Json::readRequest();
     $email = isset($body['email']) ? trim((string)$body['email']) : '';
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         Json::error('Alamat email tidak valid', 422);
@@ -33,22 +30,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $updatedIn = '';
 
     try {
+        $updated = false;
         if ($user['employee_id']) {
-            $stmt = $pdo->prepare('UPDATE employees SET email = ? WHERE id = ?');
-            $stmt->execute(array($email, (int)$user['employee_id']));
-            $updatedIn = 'employees';
-        } else {
+            $col = $pdo->query("SHOW COLUMNS FROM employees LIKE 'email'");
+            if ($col && $col->fetch()) {
+                $stmt = $pdo->prepare('UPDATE employees SET email = ? WHERE id = ?');
+                $stmt->execute(array($email, (int)$user['employee_id']));
+                $updated = true;
+                $updatedIn = 'employees';
+            }
+        }
+        if (!$updated) {
             $col = $pdo->query("SHOW COLUMNS FROM users LIKE 'email'");
             if ($col && $col->fetch()) {
                 $stmt = $pdo->prepare('UPDATE users SET email = ? WHERE id = ?');
                 $stmt->execute(array($email, (int)$user['id']));
+                $updated = true;
                 $updatedIn = 'users';
-            } else {
-                Json::error('Kolom email akun belum tersedia', 500);
             }
         }
+        if (!$updated) {
+            Json::error('Kolom email belum tersedia pada database', 500);
+        }
     } catch (PDOException $e) {
-        Json::error('Gagal menyimpan email profil', 500);
+        Json::error('Gagal menyimpan email profil: ' . $e->getMessage(), 500);
     }
 
     Json::ok('Email profil berhasil disimpan', array(
