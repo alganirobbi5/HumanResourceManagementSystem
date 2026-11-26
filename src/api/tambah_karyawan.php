@@ -14,19 +14,23 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../service/EmployeeAccountService.php';
 
-Auth::requireApiHr();
+$hr = Auth::requireApiHr();
 
 $data = Json::readRequest();
+$username = isset($data['user_name']) ? $data['user_name'] : (isset($data['username']) ? $data['username'] : '');
 $payload = array(
     'first_name' => isset($data['first_name']) ? $data['first_name'] : (isset($data['firstName']) ? $data['firstName'] : ''),
     'last_name' => isset($data['last_name']) ? $data['last_name'] : (isset($data['lastName']) ? $data['lastName'] : ''),
-    'username' => isset($data['username']) ? $data['username'] : '',
+    'user_name' => $username,
+    'username' => $username,
     'password' => isset($data['password']) ? $data['password'] : '',
     'email' => isset($data['email']) ? $data['email'] : (isset($data['confirm_email']) ? $data['confirm_email'] : ''),
     'mobile_no' => isset($data['mobile_no']) ? $data['mobile_no'] : (isset($data['number']) ? $data['number'] : ''),
-    'gender' => isset($data['gender']) ? $data['gender'] : 'L',
+    'gender' => isset($data['gender']) ? $data['gender'] : '',
     'department_id' => isset($data['department_id']) ? $data['department_id'] : (isset($data['department']) ? $data['department'] : 0),
     'designation_id' => isset($data['designation_id']) ? $data['designation_id'] : (isset($data['designation']) ? $data['designation'] : 0),
+    'status' => isset($data['status']) ? $data['status'] : 1,
+    'create_by' => isset($hr['username']) ? $hr['username'] : null,
 );
 
 try {
