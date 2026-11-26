@@ -12,6 +12,7 @@ class LeaveService
     private $notifications;
     private $audit;
     private $leaders;
+    private $holidays;
 
     public function __construct(DBConnection $db = null)
     {
@@ -170,7 +171,7 @@ class LeaveService
     /**
      * Hitung jumlah hari cuti di sisi server (aturan via Config::LEAVE_DAY_COUNT_RULE).
      */
-    public function calculateDays($startDate, $endDate)
+    public function calculateDays($startDate, $endDate, $companyId = null)
     {
         $start = DateTimeImmutable::createFromFormat('Y-m-d', $startDate);
         $end = DateTimeImmutable::createFromFormat('Y-m-d', $endDate);
@@ -181,21 +182,26 @@ class LeaveService
             throw new InvalidArgumentException('Tanggal selesai tidak boleh lebih awal dari tanggal mulai');
         }
 
-        if (Config::LEAVE_DAY_COUNT_RULE === 'kerja') {
-            $days = 0;
-            $cursor = $start;
-            while ($cursor <= $end) {
-                $dow = (int)$cursor->format('N');
-                if ($dow <= 5) {
-                    $days++;
-                }
-                $cursor = $cursor->modify('+1 day');
+        $holidayDates = array();
+        if ($companyId !== null) {
+            if (!$this->holidays) {
+                require_once __DIR__ . '/HolidayService.php';
+                $this->holidays = new HolidayService($this->db->getPdo());
             }
-            return $days;
+            $holidayDates = array_flip($this->holidays->datesFor($companyId));
         }
 
-        // Hari kalender (default, konsisten sampai kebijakan perusahaan ditetapkan)
-        return (int)$start->diff($end)->days + 1;
+        $days = 0;
+        $cursor = $start;
+        while ($cursor <= $end) {
+            $isHoliday = isset($holidayDates[$cursor->format('Y-m-d')]);
+            $isWorkday = (int)$cursor->format('N') <= 5;
+            if (!$isHoliday && (Config::LEAVE_DAY_COUNT_RULE !== 'kerja' || $isWorkday)) {
+                $days++;
+            }
+            $cursor = $cursor->modify('+1 day');
+        }
+        return $days;
     }
 
     private function hasLeaveRequestColumn($column)
@@ -230,7 +236,7 @@ class LeaveService
             throw new InvalidArgumentException('Leader persetujuan cuti tidak valid', 422);
         }
 
-        $totalDays = $this->calculateDays($startDate, $endDate); // validasi tanggal + hitung ulang
+        $totalDays = $this->calculateDays($startDate, $endDate, $companyId); // validasi tanggal + hitung ulang
         if ($totalDays <= 0) {
             throw new InvalidArgumentException('Jumlah hari cuti harus lebih dari nol');
         }
