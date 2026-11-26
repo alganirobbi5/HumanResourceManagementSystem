@@ -8,6 +8,7 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../service/LeaveLeaderService.php';
+require_once __DIR__ . '/../service/LeaveService.php';
 
 $user = Auth::requireApi();
 if (!$user['employee_id']) {
@@ -35,10 +36,16 @@ try {
     $pdo = DBConnection::get();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $judul = isset($data['title']) && $data['title'] !== '' ? (string)$data['title'] : $reason;
+    $leaveService = new LeaveService();
+    $totalLeave = $leaveService->calculateDays($startDate, $endDate);
 
     $columns = array('employee_id', 'type', 'leave_from', 'leave_to', 'total_leave', 'status', 'leader_user_id', 'created_at');
-    $values = array((int)$user['employee_id'], $judul, $startDate, $endDate, 1, 1, $leaderUserId, time());
-    foreach (array('reason' => $reason) as $column => $value) {
+    $values = array((int)$user['employee_id'], $judul, $startDate, $endDate, $totalLeave, 1, $leaderUserId, time());
+    $optional = array('reason' => $reason);
+    if (!empty($data['replacement_employee_id'])) {
+        $optional['replacement_employee_id'] = (int)$data['replacement_employee_id'];
+    }
+    foreach ($optional as $column => $value) {
         $col = $pdo->query("SHOW COLUMNS FROM leaves LIKE '" . $column . "'");
         if ($col && $col->fetch()) {
             $columns[] = $column;
@@ -49,11 +56,19 @@ try {
         implode(', ', array_fill(0, count($values), '?')) . ')');
     $stmt->execute($values);
 
-    echo json_encode(array('status' => 'success', 'message' => 'Pengajuan cuti berhasil dikirim', 'data' => array(
-        'id' => (int)$pdo->lastInsertId(),
-        'leader_user_id' => $leaderUserId,
-    )));
+    echo json_encode(array(
+        'success' => true,
+        'status' => 'success',
+        'message' => 'Pengajuan cuti berhasil dikirim',
+        'data' => array(
+            'id' => (int)$pdo->lastInsertId(),
+            'leader_user_id' => $leaderUserId,
+            'total_leave' => $totalLeave,
+        ),
+    ));
     exit;
+} catch (InvalidArgumentException $e) {
+    Json::error($e->getMessage(), 422);
 } catch (PDOException $e) {
     Json::error('Gagal menyimpan pengajuan cuti', 500);
 }
