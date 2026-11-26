@@ -30,18 +30,24 @@ try {
         $hasAttachment = false;
     }
 
-    $select = $hasAttachment
-        ? "SELECT id, subject AS title, description AS message, notice_date AS created_at, attachment FROM notices ORDER BY id DESC"
-        : "SELECT id, subject AS title, description AS message, notice_date AS created_at FROM notices ORDER BY id DESC";
-
-    $params = array();
-    if ($companyId !== null) {
-        $select = str_replace(' FROM notices ORDER BY', ' WHERE company_id = ? OR company_id IS NULL ORDER BY', $select);
-        $params[] = (int)$companyId;
-    } else {
-        $select = str_replace(' FROM notices ORDER BY', ' WHERE company_id IS NULL ORDER BY', $select);
+    $fields = 'n.id, n.subject AS title, n.description AS message, n.notice_date AS created_at,
+               COALESCE(c.company_name, "Semua Perusahaan") AS company_name';
+    if ($hasAttachment) {
+        $fields .= ', n.attachment';
     }
-    $stmt = $pdo->prepare($select);
+    $sql = 'SELECT ' . $fields . ' FROM notices n
+            LEFT JOIN companies c ON c.id = n.company_id';
+    $params = array();
+    if (!Auth::isSuperAdmin()) {
+        if ($companyId !== null) {
+            $sql .= ' WHERE (n.company_id = ? OR n.company_id IS NULL)';
+            $params[] = (int)$companyId;
+        } else {
+            $sql .= ' WHERE n.company_id IS NULL';
+        }
+    }
+    $sql .= ' ORDER BY n.id DESC';
+    $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

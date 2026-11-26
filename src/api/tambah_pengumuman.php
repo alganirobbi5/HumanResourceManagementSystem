@@ -16,7 +16,11 @@ require_once __DIR__ . '/../common/Json.php';
 
 // Hanya HR yang boleh membuat pengumuman. Identitas berasal dari token/session,
 // bukan dari payload request.
-$user = Auth::requireApiHr();
+$user = Auth::requireApi();
+$isSuperAdmin = Auth::isSuperAdmin();
+if (!$isSuperAdmin && !Auth::isHr()) {
+    Json::error('Anda tidak memiliki izin membuat pengumuman', 403);
+}
 
 $data = json_decode(file_get_contents("php://input"));
 
@@ -59,13 +63,14 @@ try {
 
     $columns = 'subject, description, notice_date, notice_time, status, insert_by, insert_date, update_by, update_date';
     $values = array($title, $message, $tanggal, $waktu, $insertBy, $insertBy);
-    $placeholders = '?, ?, ?, ?, ?, ?, NOW(), ?, NOW()';
+    $placeholders = '?, ?, ?, ?, 1, ?, NOW(), ?, NOW()';
     if ($hasAttachment) {
         $columns .= ', attachment';
         $placeholders .= ', ?';
         $values[] = $attachment;
     }
-    $companyId = Auth::companyId();
+    // Super Admin membuat pengumuman global (company_id = NULL).
+    $companyId = $isSuperAdmin ? null : Auth::companyId();
     if ($companyId !== null) {
         $columns .= ', company_id';
         $placeholders .= ', ?';

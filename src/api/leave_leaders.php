@@ -39,11 +39,12 @@ if ($method === 'POST' || $method === 'DELETE') {
         if ($action === 'delete') {
             $leaderId = isset($body['id']) ? $body['id'] : (isset($_GET['id']) ? $_GET['id'] : null);
             $userId = isset($body['user_id']) ? $body['user_id'] : (isset($_GET['user_id']) ? $_GET['user_id'] : null);
-            $target = $leaderId !== null && $leaderId !== '' ? $leaderId : $userId;
+            $byUserId = ($leaderId === null || $leaderId === '');
+            $target = $byUserId ? $userId : $leaderId;
             if (!$target) {
                 Json::error('id atau user_id wajib diisi', 400);
             }
-            $service->removeLeader($target, $companyId);
+            $service->removeLeader($target, $companyId, $byUserId);
             Json::ok('Leader berhasil dihapus');
         }
 

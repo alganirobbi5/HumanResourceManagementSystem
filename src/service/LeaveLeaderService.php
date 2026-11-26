@@ -161,21 +161,21 @@ class LeaveLeaderService
 
     private function hasPendingRequests($leaderUserId, $companyId = null)
     {
-        $checks = array(
-            array('leaves', "status IN (1, 'pending')"),
-            array('leave_requests', "status = 'pending'"),
-            array('izin_keluar', "status = 'pending'"),
-        );
-        foreach ($checks as $check) {
-            $table = $check[0];
+        $statusCondition = "LOWER(TRIM(COALESCE(r.status, ''))) IN ('pending', 'menunggu')";
+        $checks = array('leave_requests', 'izin_keluar');
+        foreach ($checks as $table) {
             if (!$this->pdo->query("SHOW TABLES LIKE '" . $table . "'")->fetchColumn()) {
                 continue;
             }
             try {
-                $sql = 'SELECT 1 FROM ' . $table . ' WHERE leader_user_id = ? AND ' . $check[1];
+                $sql = 'SELECT 1 FROM ' . $table . ' r
+                        INNER JOIN users applicant ON applicant.employee_id = r.employee_id
+                            AND applicant.is_active = 1
+                        WHERE r.leader_user_id = ? AND ' . $statusCondition;
                 $params = array((int)$leaderUserId);
                 if ($companyId !== null) {
-                    $sql .= ' AND company_id = ?';
+                    $sql .= ' AND r.company_id = ? AND applicant.company_id = ?';
+                    $params[] = (int)$companyId;
                     $params[] = (int)$companyId;
                 }
                 $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
@@ -190,10 +190,14 @@ class LeaveLeaderService
         return false;
     }
 
-    public function removeLeader($leaderIdOrUserId, $companyId = null)
+    public function removeLeader($leaderIdOrUserId, $companyId = null, $byUserId = false)
     {
         $value = (int)$leaderIdOrUserId;
-        $findSql = 'SELECT id, user_id FROM leave_leaders WHERE id = ?';
+        if ($value <= 0) {
+            return false;
+        }
+        $column = $byUserId ? 'user_id' : 'id';
+        $findSql = 'SELECT id, user_id, employee_id FROM leave_leaders WHERE ' . $column . ' = ?';
         $findParams = array($value);
         if ($companyId !== null) {
             $findSql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
@@ -202,19 +206,13 @@ class LeaveLeaderService
         $stmt = $this->pdo->prepare($findSql . ' LIMIT 1');
         $stmt->execute($findParams);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
         if (!$row) {
-            $findSql = 'SELECT id, user_id FROM leave_leaders WHERE user_id = ?';
-            $findParams = array($value);
-            if ($companyId !== null) {
-                $findSql .= ' AND COALESCE(company_id, (SELECT company_id FROM users WHERE id = user_id)) = ?';
-                $findParams[] = (int)$companyId;
-            }
-            $stmt = $this->pdo->prepare($findSql . ' LIMIT 1');
-            $stmt->execute($findParams);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            return false;
         }
-        if (!$row) {
+
+        $userCheck = $this->pdo->prepare('SELECT id FROM users WHERE id = ? LIMIT 1');
+        $userCheck->execute(array((int)$row['user_id']));
+        if (!$userCheck->fetch()) {
             return false;
         }
 
