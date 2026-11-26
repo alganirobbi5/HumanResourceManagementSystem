@@ -13,18 +13,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../service/CompanyProfileService.php';
 
 Auth::requireApiSuperAdmin();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$profiles = new CompanyProfileService($pdo);
 
 try {
     if ($method === 'GET') {
         $rows = $pdo->query(
-            'SELECT id, company_code, company_name, address, status, created_at
-             FROM companies ORDER BY id'
+            'SELECT c.id, c.company_code, c.address, c.status, c.created_at,
+                    COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
+             FROM companies c
+             LEFT JOIN company_profile cp ON cp.company_id = c.id
+             ORDER BY c.id'
         )->fetchAll(PDO::FETCH_ASSOC);
         Json::ok('OK', array('data' => $rows));
     }
@@ -42,14 +47,30 @@ try {
         if ($exists->fetch()) {
             Json::error('company_code sudah digunakan', 409);
         }
-        $stmt = $pdo->prepare(
-            'INSERT INTO companies (company_code, company_name, address, status) VALUES (?, ?, ?, 1)'
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare(
+                'INSERT INTO companies (company_code, company_name, address, status) VALUES (?, ?, ?, 1)'
+            );
+            $stmt->execute(array($code, $name, $address));
+            $id = (int)$pdo->lastInsertId();
+            $profiles->upsert($id, $name, $code, $address);
+            $pdo->commit();
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+        $rowStmt = $pdo->prepare(
+            'SELECT c.id, c.company_code, c.address, c.status, c.created_at,
+                    COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
+             FROM companies c
+             LEFT JOIN company_profile cp ON cp.company_id = c.id
+             WHERE c.id = ? LIMIT 1'
         );
-        $stmt->execute(array($code, $name, $address));
-        $id = (int)$pdo->lastInsertId();
-        $row = $pdo->query("SELECT id, company_code, company_name, address, status, created_at FROM companies WHERE id = $id")
-            ->fetch(PDO::FETCH_ASSOC);
-        Json::ok('Perusahaan berhasil ditambahkan', array('data' => $row));
+        $rowStmt->execute(array($id));
+        Json::ok('Perusahaan berhasil ditambahkan', array('data' => $rowStmt->fetch(PDO::FETCH_ASSOC)));
     }
 
     if ($method === 'PUT' || $method === 'PATCH') {
@@ -76,7 +97,13 @@ try {
         if ($stmt->rowCount() === 0) {
             Json::error('Perusahaan tidak ditemukan', 404);
         }
-        $rowStmt = $pdo->prepare('SELECT id, company_code, company_name, address, status, created_at FROM companies WHERE id = ?');
+        $rowStmt = $pdo->prepare(
+            'SELECT c.id, c.company_code, c.address, c.status, c.created_at,
+                    COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
+             FROM companies c
+             LEFT JOIN company_profile cp ON cp.company_id = c.id
+             WHERE c.id = ? LIMIT 1'
+        );
         $rowStmt->execute(array($id));
         Json::ok('Status perusahaan berhasil diperbarui', array('data' => $rowStmt->fetch(PDO::FETCH_ASSOC)));
     }

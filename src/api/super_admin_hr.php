@@ -13,21 +13,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
+require_once __DIR__ . '/../service/CompanyProfileService.php';
 
 Auth::requireApiSuperAdmin();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $pdo = DBConnection::pdo();
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$profiles = new CompanyProfileService($pdo);
 
 try {
     if ($method === 'GET') {
         $rows = $pdo->query(
             'SELECT u.id, u.username, u.role, u.company_id, u.is_active,
-                    c.company_code, c.company_name,
+                    c.company_code,
+                    COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name,
                     e.first_name, e.last_name, e.email
              FROM users u
              LEFT JOIN companies c ON c.id = u.company_id
+             LEFT JOIN company_profile cp ON cp.company_id = u.company_id
              LEFT JOIN employees e ON e.id = u.employee_id
              WHERE u.role = "hr"
              ORDER BY u.id DESC'
