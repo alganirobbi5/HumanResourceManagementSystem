@@ -26,11 +26,16 @@ class LeaveLeaderService
                     user_id INT(11) NOT NULL UNIQUE,
                     employee_id INT(11) NULL DEFAULT NULL,
                     keterangan VARCHAR(100) NULL DEFAULT NULL,
+                    jabatan VARCHAR(150) NULL DEFAULT NULL,
                     added_by INT(11) NOT NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (id),
                     KEY idx_leave_leaders_employee (employee_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+            }
+            if ($this->pdo->query("SHOW TABLES LIKE 'leave_leaders'")->fetchColumn()
+                && !$this->pdo->query("SHOW COLUMNS FROM leave_leaders LIKE 'jabatan'")->fetch()) {
+                $this->pdo->exec('ALTER TABLE leave_leaders ADD COLUMN jabatan VARCHAR(150) NULL DEFAULT NULL AFTER keterangan');
             }
             $columns = array(
                 'leader_user_id' => 'INT(11) NULL DEFAULT NULL',
@@ -59,7 +64,9 @@ class LeaveLeaderService
         return $this->pdo->query(
             'SELECT ll.id, ll.user_id, ll.employee_id, u.username,
                     CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap,
-                    ll.keterangan, ll.created_at
+                    ll.keterangan,
+                    COALESCE(NULLIF(ll.jabatan, ""), ll.keterangan) AS jabatan,
+                    ll.created_at
              FROM leave_leaders ll
              LEFT JOIN users u ON u.id = ll.user_id
              LEFT JOIN employees e ON e.id = COALESCE(ll.employee_id, u.employee_id)
@@ -80,9 +87,13 @@ class LeaveLeaderService
         )->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function addLeader($targetUserId, $hrUserId, $keterangan = null)
+    public function addLeader($targetUserId, $hrUserId, $keterangan = null, $jabatan = null)
     {
         $targetUserId = (int)$targetUserId;
+        $jabatan = trim((string)$jabatan);
+        if ($jabatan === '') {
+            throw new InvalidArgumentException('jabatan wajib diisi', 422);
+        }
         $stmt = $this->pdo->prepare('SELECT id, employee_id FROM users WHERE id = ? AND is_active = 1 LIMIT 1');
         $stmt->execute([$targetUserId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -95,8 +106,8 @@ class LeaveLeaderService
             throw new RuntimeException('User sudah terdaftar sebagai Leader', 409);
         }
         $this->pdo->prepare(
-            'INSERT INTO leave_leaders (user_id, employee_id, keterangan, added_by) VALUES (?, ?, ?, ?)'
-        )->execute(array($targetUserId, $user['employee_id'], $keterangan, (int)$hrUserId));
+            'INSERT INTO leave_leaders (user_id, employee_id, keterangan, jabatan, added_by) VALUES (?, ?, ?, ?, ?)'
+        )->execute(array($targetUserId, $user['employee_id'], $keterangan, $jabatan, (int)$hrUserId));
         return $this->leaderRow($targetUserId);
     }
 
@@ -105,7 +116,9 @@ class LeaveLeaderService
         $stmt = $this->pdo->prepare(
             'SELECT ll.id, ll.user_id, ll.employee_id, u.username,
                     CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap,
-                    ll.keterangan, ll.added_by, ll.created_at
+                    ll.keterangan,
+                    COALESCE(NULLIF(ll.jabatan, ""), ll.keterangan) AS jabatan,
+                    ll.added_by, ll.created_at
              FROM leave_leaders ll
              LEFT JOIN users u ON u.id = ll.user_id
              LEFT JOIN employees e ON e.id = COALESCE(ll.employee_id, u.employee_id)

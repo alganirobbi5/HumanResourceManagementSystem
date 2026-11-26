@@ -51,8 +51,12 @@ if ($method === 'POST' || $method === 'DELETE') {
             Json::error('user_id wajib diisi', 400);
         }
         $keterangan = isset($body['keterangan']) ? trim((string)$body['keterangan']) : null;
+        $jabatan = isset($body['jabatan']) ? trim((string)$body['jabatan']) : '';
+        if ($jabatan === '') {
+            Json::error('jabatan wajib diisi', 422);
+        }
         Json::ok('Leader berhasil ditambahkan', array(
-            'data' => $service->addLeader($targetUserId, (int)$hr['id'], $keterangan)
+            'data' => $service->addLeader($targetUserId, (int)$hr['id'], $keterangan, $jabatan)
         ));
     } catch (InvalidArgumentException $e) {
         Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);
