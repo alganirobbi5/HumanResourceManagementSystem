@@ -70,7 +70,7 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $judul = isset($data['title']) && $data['title'] !== '' ? (string)$data['title'] : $reason;
     $leaveService = new LeaveService();
-    $totalLeave = $leaveService->calculateDays($startDate, $endDate);
+    $totalLeave = $leaveService->calculateDays($startDate, $endDate, $companyId);
 
     $columns = array('employee_id', 'type', 'leave_from', 'leave_to', 'total_leave', 'status', 'leader_user_id', 'created_at');
     $values = array((int)$user['employee_id'], $judul, $startDate, $endDate, $totalLeave, 1, $leaderUserId, time());

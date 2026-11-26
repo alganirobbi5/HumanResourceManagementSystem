@@ -51,9 +51,25 @@ class AttendanceReportService
         return substr((string)$row['jam_masuk'], 0, 5);
     }
 
+    private function holidayDates($companyId)
+    {
+        if (!$this->hasTable('holidays')) {
+            return array();
+        }
+        require_once __DIR__ . '/HolidayService.php';
+        $holidays = new HolidayService($this->pdo);
+        $dates = $holidays->datesFor($companyId);
+        $map = array();
+        foreach ($dates as $date) {
+            $map[$date] = true;
+        }
+        return $map;
+    }
+
     private function employeeRows($companyId = null)
     {
         $jamMasukKerja = $this->jamMasukKerja($companyId);
+        $holidayDates = $this->holidayDates($companyId);
         $columns = array('a.id', 'a.employee_id', 'a.date', 'a.clock_in', 'a.clock_out',
             'a.total_work', 'a.status', 'a.latitude', 'a.longitude');
         foreach (array('gps_accuracy', 'selfie_path', 'selfie_out_path') as $column) {
@@ -131,7 +147,7 @@ class AttendanceReportService
                 'clock_out' => $row['clock_out'],
                 'jam_pulang' => $row['clock_out'],
                 'total_work' => $row['total_work'],
-                'status' => $row['status'],
+                'status' => isset($holidayDates[$row['date']]) ? 'Libur' : $row['status'],
                 'terlambat' => ($jamMasukKerja !== null && !empty($row['clock_in'])
                     && substr((string)$row['clock_in'], 0, 5) > $jamMasukKerja),
                 'jam_masuk_kerja' => $jamMasukKerja,
@@ -151,6 +167,7 @@ class AttendanceReportService
 
     private function adminRows($companyId = null)
     {
+        $holidayDates = $this->holidayDates($companyId);
         if (!$this->hasTable('admin_attendances')) {
             return array();
         }
@@ -211,7 +228,7 @@ class AttendanceReportService
                 'clock_out' => $row['waktu_pulang'],
                 'jam_pulang' => $row['waktu_pulang'],
                 'total_work' => null,
-                'status' => 'recorded',
+                'status' => isset($holidayDates[$row['tanggal']]) ? 'Libur' : 'recorded',
                 'latitude' => $row['latitude_masuk'],
                 'longitude' => $row['longitude_masuk'],
                 'out_latitude' => $row['latitude_pulang'],
@@ -259,6 +276,61 @@ class AttendanceReportService
                 }
             }
             $filtered[] = $row;
+        }
+
+        $holidayDates = $this->holidayDates($companyId);
+        $existingDates = array();
+        foreach ($filtered as $row) {
+            $existingDates[(string)$row['tanggal']] = true;
+        }
+        foreach ($holidayDates as $date => $unused) {
+            if ($tanggal !== '' && (string)$date !== $tanggal) {
+                continue;
+            }
+            if ($start !== '' && (string)$date < $start) {
+                continue;
+            }
+            if ($end !== '' && (string)$date > $end) {
+                continue;
+            }
+            if (isset($existingDates[(string)$date])) {
+                continue;
+            }
+            $filtered[] = array(
+                'id' => 0,
+                'record_type' => 'holiday',
+                'employee_id' => null,
+                'admin_id' => null,
+                'nama' => 'Hari Libur',
+                'employee_name' => 'Hari Libur',
+                'first_name' => '',
+                'last_name' => '',
+                'username' => '',
+                'employee_nik' => '',
+                'department_name' => '',
+                'designation_name' => '',
+                'department' => '',
+                'jabatan' => '',
+                'tanggal' => (string)$date,
+                'date' => (string)$date,
+                'clock_in' => null,
+                'jam_masuk' => null,
+                'clock_out' => null,
+                'jam_pulang' => null,
+                'total_work' => null,
+                'status' => 'Libur',
+                'terlambat' => false,
+                'jam_masuk_kerja' => null,
+                'latitude' => null,
+                'longitude' => null,
+                'out_latitude' => null,
+                'out_longitude' => null,
+                'gps_accuracy' => null,
+                'selfie_path' => null,
+                'selfie_out_path' => null,
+                'selfie_in_url' => null,
+                'selfie_out_url' => null,
+            );
         }
 
         usort($filtered, function ($a, $b) {
