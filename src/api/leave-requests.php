@@ -4,15 +4,24 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/Config.php';
 require_once __DIR__ . '/../service/LeaveService.php';
+require_once __DIR__ . '/../service/LeaveLeaderService.php';
 require_once __DIR__ . '/../service/RateLimiter.php';
 
 $user = Auth::requireApi();
 $method = $_SERVER['REQUEST_METHOD'];
 $service = new LeaveService();
+$leaders = new LeaveLeaderService();
 
 if ($method === 'GET') {
-    $scope = isset($_GET['scope']) ? $_GET['scope'] : 'me';
+    $scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : 'me';
     $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+
+    if ($scope === 'leader') {
+        if (!$leaders->isLeader((int)$user['id'])) {
+            Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
+        }
+        Json::ok('OK', $service->forLeader((int)$user['id'], $page));
+    }
 
     if ($scope === 'pending') {
         if ($user['role'] !== 'hr') {
@@ -42,7 +51,10 @@ if ($method === 'GET') {
             Json::error('Pengajuan cuti tidak ditemukan', 404);
         }
         $isOwner = $row['employee_id'] == $user['employee_id'];
-        if (!$isOwner && $user['role'] !== 'hr') {
+        $isTargetLeader = !empty($row['leader_user_id'])
+            && (int)$row['leader_user_id'] === (int)$user['id']
+            && $leaders->isLeader((int)$user['id']);
+        if (!$isOwner && !$isTargetLeader && $user['role'] !== 'hr') {
             Json::error('Anda tidak dapat melihat pengajuan milik karyawan lain', 403);
         }
         Json::ok('OK', array('data' => $row));

@@ -56,8 +56,18 @@ try {
 
     $now = Config::companyNow()->format('Y-m-d H:i:s');
     $leaderName = $leaderService->leaderName($leaderUserId);
-    $set = array('status = ?', 'updated_at = NOW()');
+    $set = array('status = ?');
     $params = array($decision === 'approved' ? 2 : 3);
+    $updatedAt = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'updated_at'");
+    if ($updatedAt && $updatedAt->fetch()) {
+        $set[] = 'updated_at = NOW()';
+    } else {
+        $modifiedAt = $pdo->query("SHOW COLUMNS FROM leaves LIKE 'modified_at'");
+        if ($modifiedAt && $modifiedAt->fetch()) {
+            $set[] = 'modified_at = ?';
+            $params[] = time();
+        }
+    }
     foreach (array(
         'approved_by_user_id' => (int)$leaderUserId,
         'approved_by_name' => $leaderName,

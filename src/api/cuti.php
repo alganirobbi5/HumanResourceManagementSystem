@@ -2,14 +2,44 @@
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: GET, POST");
 
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../service/LeaveLeaderService.php';
+require_once __DIR__ . '/../service/LeaveService.php';
 
 $user = Auth::requireApi();
+$leaders = new LeaveLeaderService();
+$service = new LeaveService();
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : 'me';
+
+    if ($scope === 'leader') {
+        if (!$leaders->isLeader((int)$user['id'])) {
+            Json::error(LeaveLeaderService::NOT_LEADER_MESSAGE, 403);
+        }
+        Json::ok('OK', array('data' => $service->listLeaves('leader', (int)$user['id'])));
+    }
+
+    if ($scope === 'all') {
+        if (!Auth::isHr()) {
+            Json::error('Anda tidak memiliki izin melihat seluruh pengajuan cuti', 403);
+        }
+        Json::ok('OK', array('data' => $service->listLeaves('all')));
+    }
+
+    if ($user['employee_id']) {
+        Json::ok('OK', array('data' => $service->listLeaves('mine', (int)$user['employee_id'])));
+    }
+    if (Auth::isHr()) {
+        Json::ok('OK', array('data' => $service->listLeaves('all')));
+    }
+    Json::error('Akun ini tidak terhubung ke data karyawan', 400);
+}
+
 if (!$user['employee_id']) {
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
