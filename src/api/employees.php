@@ -82,6 +82,8 @@ $sql = 'SELECT u.id AS user_id, e.id AS employee_id,
                TRIM(CONCAT(e.first_name, " ", e.last_name)) AS full_name,
                e.email AS email,
                e.mobile_no AS phone,
+               c.company_name, c.company_code,
+               CASE WHEN ll.id IS NOT NULL THEN 1 ELSE 0 END AS is_leader,
                e.department_id, d.name AS department_name,
                e.designation_id, dg.title AS designation_name,
                COALESCE(u.is_active, e.status) AS is_active,
@@ -90,8 +92,14 @@ $sql = 'SELECT u.id AS user_id, e.id AS employee_id,
         LEFT JOIN users u ON u.employee_id = e.id
         LEFT JOIN departments d ON d.id = e.department_id
         LEFT JOIN employee_designations dg ON dg.id = e.designation_id
-        WHERE 1 = 1';
+        LEFT JOIN companies c ON c.id = COALESCE(e.company_id, u.company_id)
+        LEFT JOIN leave_leaders ll ON ll.user_id = u.id';
 $params = array();
+if ($companyId !== null) {
+    $sql .= ' AND COALESCE(ll.company_id, u.company_id) = ?';
+    $params[] = $companyId;
+}
+$sql .= ' WHERE 1 = 1';
 if ($companyId !== null) {
     $sql .= ' AND e.company_id = ?';
     $params[] = $companyId;
@@ -120,6 +128,9 @@ foreach ($rows as $row) {
         'phone' => (string)$row['phone'],
         'no_hp' => (string)$row['phone'],
         'whatsapp' => (string)$row['phone'],
+        'company_name' => (string)$row['company_name'],
+        'company_code' => (string)$row['company_code'],
+        'is_leader' => (int)$row['is_leader'],
         'department_id' => (int)$row['department_id'],
         'department_name' => (string)$row['department_name'],
         'designation_id' => (int)$row['designation_id'],

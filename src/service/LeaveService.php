@@ -187,7 +187,7 @@ class LeaveService
             require_once __DIR__ . '/HolidayService.php';
             $this->holidays = new HolidayService($this->db->getPdo());
         }
-        $holidayDates = array_flip($this->holidays->datesFor($companyId));
+        $holidayDates = array_flip($this->holidays->datesFor(null));
 
         $days = 0;
         $cursor = $start;

@@ -19,8 +19,6 @@ class HolidayService
     private function ensureSchema()
     {
         try {
-            $this->pdo->exec('DROP TABLE IF EXISTS `holydays`');
-            $this->pdo->exec('DROP TABLE IF EXISTS `holiday_informations`');
             $this->pdo->exec('CREATE TABLE IF NOT EXISTS `holidays` (
                 `id` INT(11) NOT NULL AUTO_INCREMENT,
                 `company_id` INT(11) NULL DEFAULT NULL,
