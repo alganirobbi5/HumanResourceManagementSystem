@@ -41,6 +41,26 @@ class EmployeeAccountService
         return $row && isset($row['Null']) && strtoupper((string)$row['Null']) === 'YES' ? null : 0;
     }
 
+    private function normalizeMasterId($value)
+    {
+        if ($value === null || $value === '' || (is_string($value) && trim($value) === '')) {
+            return null;
+        }
+        if (!is_numeric($value)) {
+            return null;
+        }
+        $id = (int)$value;
+        return $id > 0 ? $id : null;
+    }
+
+    private function storageMasterValue($column, $id)
+    {
+        if ($id === null || (int)$id <= 0) {
+            return $this->emptyMasterValue($column);
+        }
+        return (int)$id;
+    }
+
     private function employeeByUsername($username)
     {
         $stmt = $this->pdo->prepare('SELECT id FROM employees WHERE user_name = ? LIMIT 1');
@@ -133,8 +153,12 @@ class EmployeeAccountService
         }
         $phoneColumn = $this->phoneColumn();
         $gender = $this->normalizeGender(trim((string)(isset($data['gender']) ? $data['gender'] : '')));
-        $departmentId = isset($data['department_id']) ? (string)$data['department_id'] : '';
-        $designationId = isset($data['designation_id']) ? (string)$data['designation_id'] : '';
+        $departmentId = $this->normalizeMasterId(isset($data['department_id'])
+            ? $data['department_id']
+            : (isset($data['department']) ? $data['department'] : null));
+        $designationId = $this->normalizeMasterId(isset($data['designation_id'])
+            ? $data['designation_id']
+            : (isset($data['designation']) ? $data['designation'] : null));
         $status = isset($data['status']) ? (string)$data['status'] : '1';
         $createBy = isset($data['create_by']) ? trim((string)$data['create_by']) : null;
         $companyId = isset($data['company_id']) && $data['company_id'] !== null && $data['company_id'] !== ''
@@ -161,23 +185,17 @@ class EmployeeAccountService
         if (strlen($mobileNo) > 15) {
             throw new InvalidArgumentException('phone maksimal 15 karakter');
         }
-        if ($departmentId === '' || (int)$departmentId <= 0) {
-            $departmentValue = $this->emptyMasterValue('department_id');
-        } elseif (!ctype_digit($departmentId)
-            || !$this->masterRow('departments', $departmentId, $companyId)) {
-            throw new InvalidArgumentException('department_id tidak valid');
-        } else {
-            $departmentValue = (int)$departmentId;
+        if ($departmentId !== null
+            && !$this->masterRow('departments', $departmentId, $companyId)) {
+            throw new InvalidArgumentException('department_id tidak ditemukan pada perusahaan ini');
         }
+        $departmentValue = $this->storageMasterValue('department_id', $departmentId);
         $designationTable = $this->designationTable();
-        if ($designationId === '' || (int)$designationId <= 0) {
-            $designationValue = $this->emptyMasterValue('designation_id');
-        } elseif (!ctype_digit($designationId)
-            || !$this->masterRow($designationTable, $designationId, $companyId)) {
-            throw new InvalidArgumentException('designation_id tidak valid');
-        } else {
-            $designationValue = (int)$designationId;
+        if ($designationId !== null
+            && !$this->masterRow($designationTable, $designationId, $companyId)) {
+            throw new InvalidArgumentException('designation_id tidak ditemukan pada perusahaan ini');
         }
+        $designationValue = $this->storageMasterValue('designation_id', $designationId);
         if (!ctype_digit($status) || !in_array((int)$status, array(0, 1), true)) {
             throw new InvalidArgumentException('status harus 0 atau 1');
         }
@@ -393,15 +411,15 @@ class EmployeeAccountService
             if (!array_key_exists($field, $data) || !$this->hasColumn('employees', $field)) {
                 continue;
             }
-            $id = trim((string)$data[$field]);
-            if ($id === '' || (int)$id <= 0) {
-                $employeeChanges[$field] = $this->emptyMasterValue($field);
+            $id = $this->normalizeMasterId($data[$field]);
+            if ($id === null) {
+                $employeeChanges[$field] = $this->storageMasterValue($field, null);
                 continue;
             }
-            if (!ctype_digit($id) || !$this->masterRow($table, $id, $companyId)) {
-                throw new InvalidArgumentException($field . ' tidak valid untuk perusahaan ini', 422);
+            if (!$this->masterRow($table, $id, $companyId)) {
+                throw new InvalidArgumentException($field . ' tidak ditemukan pada perusahaan ini', 422);
             }
-            $employeeChanges[$field] = (int)$id;
+            $employeeChanges[$field] = $id;
         }
 
         $this->pdo->beginTransaction();
