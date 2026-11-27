@@ -226,6 +226,62 @@ class CompanyMasterService
         return (int)$this->pdo->lastInsertId();
     }
 
+    public function officeLocation($id, $companyId = null)
+    {
+        $sql = 'SELECT * FROM office_locations WHERE id = ?';
+        $params = array((int)$id);
+        if ($companyId !== null) {
+            $sql .= ' AND company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql . ' LIMIT 1');
+        $stmt->execute($params);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function updateOfficeLocation($id, $nama, $latitude, $longitude, $radius, $companyId = null)
+    {
+        $sql = 'UPDATE office_locations SET nama_lokasi = ?, latitude = ?, longitude = ?, radius_meter = ? WHERE id = ?';
+        $params = array($nama, $latitude, $longitude, $radius, (int)$id);
+        if ($companyId !== null) {
+            $sql .= ' AND company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function removeOfficeLocation($id, $companyId = null)
+    {
+        $sql = 'DELETE FROM office_locations WHERE id = ?';
+        $params = array((int)$id);
+        if ($companyId !== null) {
+            $sql .= ' AND company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function formatLocation($row)
+    {
+        if (!$row) {
+            return null;
+        }
+        return array(
+            'id' => (int)$row['id'],
+            'company_id' => $row['company_id'] !== null ? (int)$row['company_id'] : null,
+            'name' => (string)$row['nama_lokasi'],
+            'nama_lokasi' => (string)$row['nama_lokasi'],
+            'latitude' => (string)$row['latitude'],
+            'longitude' => (string)$row['longitude'],
+            'radius' => (string)$row['radius_meter'],
+            'radius_meter' => (string)$row['radius_meter'],
+        );
+    }
+
     public function departments($companyId)
     {
         $companyId = $this->companyValue($companyId);

@@ -55,6 +55,31 @@ try {
         if ($exists->fetch()) {
             Json::error('company_code sudah digunakan', 409);
         }
+
+        $locations = array();
+        if (isset($data['locations']) && is_array($data['locations'])) {
+            $locations = $data['locations'];
+        } elseif (isset($data['location']) && is_array($data['location'])) {
+            $locations = array($data['location']);
+        }
+        foreach ($locations as $location) {
+            if (!is_array($location)) {
+                Json::error('Format locations tidak valid', 422);
+            }
+            $locationName = isset($location['name'])
+                ? trim((string)$location['name'])
+                : (isset($location['nama_lokasi']) ? trim((string)$location['nama_lokasi']) : '');
+            $latitude = isset($location['latitude']) ? $location['latitude'] : '';
+            $longitude = isset($location['longitude']) ? $location['longitude'] : '';
+            $radius = isset($location['radius'])
+                ? $location['radius']
+                : (isset($location['radius_meter']) ? $location['radius_meter'] : '');
+            if ($locationName === '' || !is_numeric($latitude) || !is_numeric($longitude)
+                || !is_numeric($radius) || (float)$radius <= 0) {
+                Json::error('Data lokasi tidak lengkap', 422);
+            }
+        }
+
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
@@ -64,6 +89,21 @@ try {
             $id = (int)$pdo->lastInsertId();
             $profiles->upsert($id, $name, $code, null, $logo);
             $master->initialize($id);
+            foreach ($locations as $location) {
+                $locationName = isset($location['name'])
+                    ? trim((string)$location['name'])
+                    : trim((string)$location['nama_lokasi']);
+                $radius = isset($location['radius'])
+                    ? $location['radius']
+                    : $location['radius_meter'];
+                $master->addOfficeLocation(
+                    $id,
+                    $locationName,
+                    $location['latitude'],
+                    $location['longitude'],
+                    $radius
+                );
+            }
             $pdo->commit();
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
@@ -79,7 +119,17 @@ try {
              WHERE c.id = ? LIMIT 1'
         );
         $rowStmt->execute(array($id));
-        Json::ok('Perusahaan berhasil ditambahkan', array('data' => $rowStmt->fetch(PDO::FETCH_ASSOC)));
+        $company = $rowStmt->fetch(PDO::FETCH_ASSOC);
+        $savedLocations = array();
+        foreach ($master->officeLocations($id) as $location) {
+            $savedLocations[] = $master->formatLocation($location);
+        }
+        Json::ok('Perusahaan berhasil ditambahkan', array(
+            'id' => $id,
+            'company_id' => $id,
+            'data' => $company,
+            'locations' => $savedLocations
+        ));
     }
 
     if ($method === 'PUT' || $method === 'PATCH') {
