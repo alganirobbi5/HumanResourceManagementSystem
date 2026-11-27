@@ -183,13 +183,11 @@ class LeaveService
         }
 
         $holidayDates = array();
-        if ($companyId !== null) {
-            if (!$this->holidays) {
-                require_once __DIR__ . '/HolidayService.php';
-                $this->holidays = new HolidayService($this->db->getPdo());
-            }
-            $holidayDates = array_flip($this->holidays->datesFor($companyId));
+        if (!$this->holidays) {
+            require_once __DIR__ . '/HolidayService.php';
+            $this->holidays = new HolidayService($this->db->getPdo());
         }
+        $holidayDates = array_flip($this->holidays->datesFor($companyId));
 
         $days = 0;
         $cursor = $start;

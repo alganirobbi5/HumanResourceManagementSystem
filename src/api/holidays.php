@@ -24,7 +24,17 @@ try {
     if ($method === 'GET') {
         $year = isset($_GET['year']) && $_GET['year'] !== ''
             ? (int)$_GET['year'] : null;
-        Json::ok('OK', array('data' => $service->listing($companyId, $year, $isSuperAdmin)));
+        $refresh = isset($_GET['refresh']) && (string)$_GET['refresh'] === '1';
+        $upcoming = isset($_GET['upcoming']) && (string)$_GET['upcoming'] === '1';
+        $sync = $service->syncNational($refresh);
+        $data = $upcoming
+            ? $service->upcoming()
+            : $service->listing(null, $year, true);
+        $extra = array('data' => $data, 'sync' => $sync);
+        if (!$upcoming && Auth::isHr() && $companyId !== null) {
+            $extra['company_holidays'] = $service->companyListing($companyId, $year);
+        }
+        Json::ok('OK', $extra);
     }
 
     if ($method === 'POST') {
