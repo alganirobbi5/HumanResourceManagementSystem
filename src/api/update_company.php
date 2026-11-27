@@ -19,6 +19,10 @@ $user = Auth::requireApiHr();
 $data = json_decode(file_get_contents("php://input"));
 $nama = isset($data->nama_perusahaan) ? trim((string)$data->nama_perusahaan) : '';
 $kode = isset($data->kode_perusahaan) ? trim((string)$data->kode_perusahaan) : '';
+$logo = isset($data->logo) ? trim((string)$data->logo) : null;
+if ($logo !== null && !preg_match('/^data:image\//', $logo)) {
+    $logo = null;
+}
 
 if ($nama === '' || $kode === '') {
     Json::error('Nama dan kode perusahaan wajib diisi', 400);
@@ -33,13 +37,15 @@ try {
         $companyId = 1;
     }
     $profiles = new CompanyProfileService($pdo);
-    $profiles->upsert($companyId, $nama, $kode);
+    $profiles->upsert($companyId, $nama, $kode, null, $logo);
     $profiles->syncCompany($companyId, $nama, $kode);
+    $tersimpan = $profiles->rowForCompany($companyId);
 
     Json::ok('Profil perusahaan berhasil diubah', array(
         'data' => array(
             'nama_perusahaan' => $nama,
             'kode_perusahaan' => $kode,
+            'logo' => isset($tersimpan['logo']) ? $tersimpan['logo'] : null,
         ),
     ));
 } catch (PDOException $e) {
