@@ -44,7 +44,11 @@ if ($isHrAdmin) {
             'message' => 'Absen pulang berhasil',
             'data' => array(
                 'id' => $status['id'],
-                'jam_pulang' => $status['jam_pulang'],
+                'jam_masuk' => $status['clock_in'],
+                'jam_pulang' => $status['clock_out'],
+                'clock_in' => $status['clock_in'],
+                'clock_out' => $status['clock_out'],
+                'working_seconds' => (int)$status['working_seconds'],
                 'total_jam_kerja' => $totalJam,
                 'latitude' => isset($data['latitude']) ? (float)$data['latitude'] : null,
                 'longitude' => isset($data['longitude']) ? (float)$data['longitude'] : null,
@@ -120,6 +124,7 @@ $clock_in = new DateTime($tanggal . ' ' . $absen['clock_in']);
 $clock_out = new DateTime($tanggal . ' ' . $waktu_sekarang);
 $diff = $clock_in->diff($clock_out);
 $total_jam = $diff->h + ($diff->i / 60);
+$working_seconds = max(0, $clock_out->getTimestamp() - $clock_in->getTimestamp());
 
 $selfie = AttendanceService::storeSelfie(
     isset($data['selfie']) ? $data['selfie'] : null,
@@ -184,7 +189,11 @@ Json::out(array(
     'message' => 'Absen pulang berhasil',
     'data' => array(
         'id' => (int)$absen['id'],
+        'jam_masuk' => $absen['clock_in'],
         'jam_pulang' => $waktu_sekarang,
+        'clock_in' => $absen['clock_in'],
+        'clock_out' => $waktu_sekarang,
+        'working_seconds' => (int)$working_seconds,
         'total_jam_kerja' => round($total_jam, 2) . ' jam',
         'latitude' => $lat,
         'longitude' => $lng,

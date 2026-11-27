@@ -24,6 +24,32 @@ class AttendanceService
         return null;
     }
 
+    public static function normalizedTime($time)
+    {
+        if ($time === null || $time === '' || (string)$time === '00:00:00') {
+            return null;
+        }
+        return substr((string)$time, 0, 8);
+    }
+
+    public static function workingSeconds($clockIn, $clockOut = null, $tanggal = null)
+    {
+        $clockIn = self::normalizedTime($clockIn);
+        if ($clockIn === null) {
+            return 0;
+        }
+        $tanggal = $tanggal ?: Config::companyToday();
+        try {
+            $start = new DateTime($tanggal . ' ' . $clockIn);
+            $clockOut = self::normalizedTime($clockOut);
+            $end = $clockOut !== null ? new DateTime($tanggal . ' ' . $clockOut) : Config::companyNow();
+            $seconds = $end->getTimestamp() - $start->getTimestamp();
+            return $seconds > 0 ? $seconds : 0;
+        } catch (Exception $e) {
+            return 0;
+        }
+    }
+
     public static function storeSelfie($selfie, $tanggal, $employeeId, $prefix, $scope = '')
     {
         if (!is_string($selfie) ||

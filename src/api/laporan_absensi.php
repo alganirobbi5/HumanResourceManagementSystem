@@ -48,7 +48,11 @@ try {
         'keyword' => $keyword,
     ));
     http_response_code(200);
-    echo json_encode(array('status' => 'success', 'data' => $data));
+    echo json_encode(array(
+        'status' => 'success',
+        'data' => $data,
+        'holidays' => $service->holidays()
+    ));
     exit;
 } catch (Exception $e) {
     Json::error('Gagal memuat data absensi', 500);

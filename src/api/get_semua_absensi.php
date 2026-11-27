@@ -19,7 +19,10 @@ try {
         'end_date' => isset($_GET['end_date']) ? trim((string)$_GET['end_date']) : '',
         'keyword' => isset($_GET['keyword']) ? trim((string)$_GET['keyword']) : '',
     ));
-    Json::ok('Daftar absensi seluruh karyawan dan Admin HR', array('data' => $data));
+    Json::ok('Daftar absensi seluruh karyawan dan Admin HR', array(
+        'data' => $data,
+        'holidays' => $service->holidays()
+    ));
 } catch (Exception $e) {
     Json::error('Gagal memuat data absensi', 500);
 }

@@ -5,6 +5,7 @@ require_once __DIR__ . '/../common/DBConnection.php';
 class AttendanceReportService
 {
     private $pdo;
+    private $lastHolidays = array();
 
     public function __construct(PDO $pdo = null)
     {
@@ -287,60 +288,22 @@ class AttendanceReportService
         }
 
         $holidayDates = $this->holidayDates();
-        $existingDates = array();
-        foreach ($filtered as $row) {
-            $existingDates[(string)$row['tanggal']] = true;
-        }
+        $holidayList = array();
         foreach ($holidayDates as $date => $unused) {
-            if ($tanggal !== '' && (string)$date !== $tanggal) {
+            $date = (string)$date;
+            if ($tanggal !== '' && $date !== $tanggal) {
                 continue;
             }
-            if ($start !== '' && (string)$date < $start) {
+            if ($start !== '' && $date < $start) {
                 continue;
             }
-            if ($end !== '' && (string)$date > $end) {
+            if ($end !== '' && $date > $end) {
                 continue;
             }
-            if (isset($existingDates[(string)$date])) {
-                continue;
-            }
-            $filtered[] = array(
-                'id' => 0,
-                'record_type' => 'holiday',
-                'employee_id' => null,
-                'admin_id' => null,
-                'nama' => 'Hari Libur',
-                'employee_name' => 'Hari Libur',
-                'first_name' => '',
-                'last_name' => '',
-                'username' => '',
-                'employee_nik' => '',
-                'phone' => '',
-                'department_name' => '',
-                'designation_name' => '',
-                'department' => '',
-                'jabatan' => '',
-                'tanggal' => (string)$date,
-                'date' => (string)$date,
-                'clock_in' => null,
-                'jam_masuk' => null,
-                'clock_out' => null,
-                'jam_pulang' => null,
-                'total_work' => null,
-                'status' => 'Libur',
-                'terlambat' => false,
-                'jam_masuk_kerja' => null,
-                'latitude' => null,
-                'longitude' => null,
-                'out_latitude' => null,
-                'out_longitude' => null,
-                'gps_accuracy' => null,
-                'selfie_path' => null,
-                'selfie_out_path' => null,
-                'selfie_in_url' => null,
-                'selfie_out_url' => null,
-            );
+            $holidayList[] = $date;
         }
+        sort($holidayList);
+        $this->lastHolidays = $holidayList;
 
         usort($filtered, function ($a, $b) {
             $cmp = strcmp((string)$b['tanggal'], (string)$a['tanggal']);
@@ -356,6 +319,11 @@ class AttendanceReportService
         return $filtered;
     }
 
+    public function holidays()
+    {
+        return $this->lastHolidays;
+    }
+
     public function paginate(array $rows, $page = 1, $perPage = 15)
     {
         $page = max(1, (int)$page);
@@ -365,6 +333,7 @@ class AttendanceReportService
             'total' => count($rows),
             'page' => $page,
             'per_page' => $perPage,
+            'holidays' => $this->lastHolidays,
         );
     }
 }

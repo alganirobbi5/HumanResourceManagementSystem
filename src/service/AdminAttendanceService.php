@@ -43,13 +43,18 @@ class AdminAttendanceService
         }
         $row = $this->db->selectOne($statusSql . ' LIMIT 1', $statusParams);
 
+        $clockIn = $row ? AttendanceService::normalizedTime($row['waktu_masuk']) : null;
+        $clockOut = $row ? AttendanceService::normalizedTime($row['waktu_pulang']) : null;
         return array(
             'id' => $row ? (int)$row['id'] : null,
             'tanggal' => $tanggal,
-            'sudah_masuk' => $row && $row['waktu_masuk'] !== null,
-            'jam_masuk' => $row ? $row['waktu_masuk'] : null,
-            'sudah_pulang' => $row && $row['waktu_pulang'] !== null,
-            'jam_pulang' => $row ? $row['waktu_pulang'] : null,
+            'sudah_masuk' => $clockIn !== null,
+            'jam_masuk' => $clockIn,
+            'clock_in' => $clockIn,
+            'sudah_pulang' => $clockOut !== null,
+            'jam_pulang' => $clockOut,
+            'clock_out' => $clockOut,
+            'working_seconds' => AttendanceService::workingSeconds($clockIn, $clockOut, $tanggal),
             'selfie_in_url' => $row && !empty($row['selfie_masuk'])
                 ? 'selfie.php?id=' . (int)$row['id'] . '&type=in&scope=admin' : null,
             'selfie_out_url' => $row && !empty($row['selfie_pulang'])

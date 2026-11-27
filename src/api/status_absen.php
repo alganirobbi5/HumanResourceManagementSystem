@@ -7,6 +7,7 @@ header("Content-Type: application/json; charset=UTF-8");
 require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/Config.php';
+require_once __DIR__ . '/../service/AttendanceService.php';
 
 $user = Auth::requireApi();
 $employee_id = $user['employee_id'];
@@ -27,6 +28,9 @@ if (!$employee_id) {
                 "sudah_masuk" => (bool)$statusAdmin['sudah_masuk'],
                 "jam_masuk" => $statusAdmin['jam_masuk'],
                 "jam_pulang" => $statusAdmin['jam_pulang'],
+                "clock_in" => $statusAdmin['clock_in'],
+                "clock_out" => $statusAdmin['clock_out'],
+                "working_seconds" => (int)$statusAdmin['working_seconds'],
                 "sudah_pulang" => (bool)$statusAdmin['sudah_pulang'],
                 "selfie_in_url" => $statusAdmin['selfie_in_url'],
                 "selfie_out_url" => $statusAdmin['selfie_out_url']
@@ -76,14 +80,19 @@ $stmt->execute($statusParams);
 $absen = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if ($absen) {
+    $clockIn = AttendanceService::normalizedTime($absen['clock_in']);
+    $clockOut = AttendanceService::normalizedTime($absen['clock_out']);
     echo json_encode([
         "success" => true,
         "data" => [
             "id" => (int)$absen['id'],
             "sudah_masuk" => true,
-            "jam_masuk" => $absen['clock_in'],
-            "jam_pulang" => ($absen['clock_out'] == '00:00:00' || $absen['clock_out'] == null) ? null : $absen['clock_out'],
-            "sudah_pulang" => ($absen['clock_out'] != '00:00:00' && $absen['clock_out'] != null),
+            "jam_masuk" => $clockIn,
+            "jam_pulang" => $clockOut,
+            "clock_in" => $clockIn,
+            "clock_out" => $clockOut,
+            "working_seconds" => AttendanceService::workingSeconds($clockIn, $clockOut, $tanggal),
+            "sudah_pulang" => $clockOut !== null,
             "selfie_in_url" => !empty($absen['selfie_path']) ? 'selfie.php?id=' . (int)$absen['id'] . '&type=in' : null,
             "selfie_out_url" => !empty($absen['selfie_out_path']) ? 'selfie.php?id=' . (int)$absen['id'] . '&type=out' : null
         ]
@@ -96,6 +105,9 @@ if ($absen) {
             "sudah_masuk" => false,
             "jam_masuk" => null,
             "jam_pulang" => null,
+            "clock_in" => null,
+            "clock_out" => null,
+            "working_seconds" => 0,
             "sudah_pulang" => false,
             "selfie_in_url" => null,
             "selfie_out_url" => null
