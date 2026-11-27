@@ -128,11 +128,16 @@ function validateAttachment($value)
         $namaFile = isset($decoded['namaFile']) ? (string)$decoded['namaFile'] : '';
     }
 
-    if (!preg_match('#^data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=\r\n]+)$#', $dataUrl, $m)) {
+    $pos = strpos($dataUrl, ';base64,');
+    if (strpos($dataUrl, 'data:') !== 0 || $pos === false) {
+        return array('ok' => false, 'message' => 'Format lampiran tidak didukung');
+    }
+    $payload = preg_replace('/\s+/', '', substr($dataUrl, $pos + 8));
+    if ($payload === '' || !preg_match('/^[A-Za-z0-9+\/=]+$/', $payload)) {
         return array('ok' => false, 'message' => 'Format lampiran tidak didukung');
     }
 
-    $bytes = base64_decode($m[2], true);
+    $bytes = base64_decode($payload, true);
     if ($bytes === false || strlen($bytes) > 10 * 1024 * 1024) {
         return array('ok' => false, 'message' => 'Isi lampiran tidak valid atau terlalu besar');
     }
