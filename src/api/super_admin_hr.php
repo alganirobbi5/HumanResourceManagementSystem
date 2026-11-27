@@ -2,7 +2,7 @@
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Authorization");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -27,7 +27,7 @@ $master = new CompanyMasterService($pdo);
 try {
     if ($method === 'GET') {
         $rows = $pdo->query(
-            'SELECT u.id, u.username, u.role, u.company_id, u.is_active,
+            'SELECT u.id, u.username, u.role, u.company_id, u.is_active, u.Password,
                     c.company_code,
                     COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name,
                     e.first_name, e.last_name, e.email
@@ -35,7 +35,7 @@ try {
              LEFT JOIN companies c ON c.id = u.company_id
              LEFT JOIN company_profile cp ON cp.company_id = u.company_id
              LEFT JOIN employees e ON e.id = u.employee_id
-             WHERE u.role = "hr"
+             WHERE u.role IN ("hr", "super_admin")
              ORDER BY u.id DESC'
         )->fetchAll(PDO::FETCH_ASSOC);
         Json::ok('OK', array('data' => $rows));
@@ -75,12 +75,20 @@ try {
         if ($employeeCheck->fetch()) {
             Json::error('Username sudah digunakan', 409);
         }
+        $adminNameCheck = $pdo->prepare('SELECT id FROM admins WHERE name = ? LIMIT 1');
+        $adminNameCheck->execute(array($username));
+        if ($adminNameCheck->fetch()) {
+            Json::error('Username sudah digunakan', 409);
+        }
 
         $department = $master->firstDepartment($companyId);
         $designation = $master->firstDesignation($companyId);
         if ((int)$department <= 0 || (int)$designation <= 0) {
             Json::error('Data department atau jabatan belum tersedia. Hubungi administrator.', 422);
         }
+
+        $hasPasswordColumn = (bool)$pdo->query("SHOW COLUMNS FROM users LIKE 'Password'")->fetch();
+        $hasAdminColumn = (bool)$pdo->query("SHOW COLUMNS FROM users LIKE 'admin_id'")->fetch();
 
         $pdo->beginTransaction();
         try {
@@ -96,14 +104,31 @@ try {
             $employeeId = (int)$pdo->lastInsertId();
 
             $pdo->prepare(
-                'INSERT INTO users (employee_id, username, password_hash, role, company_id, is_active)
-                 VALUES (?, ?, ?, "hr", ?, 1)'
-            )->execute(array(
+                'INSERT INTO admins (name, password, created_at) VALUES (?, ?, NOW())'
+            )->execute(array($username, $password));
+            $adminId = (int)$pdo->lastInsertId();
+
+            $userColumns = 'employee_id, username, password_hash, role, company_id, is_active';
+            $userValues = array(
                 $employeeId,
                 $username,
                 password_hash($password, PASSWORD_BCRYPT),
                 $companyId
-            ));
+            );
+            $placeholders = '?, ?, ?, "hr", ?, 1';
+            if ($hasAdminColumn) {
+                $userColumns = 'employee_id, admin_id, username, password_hash, role, company_id, is_active';
+                $placeholders = '?, ?, ?, ?, "hr", ?, 1';
+                array_splice($userValues, 1, 0, array($adminId));
+            }
+            if ($hasPasswordColumn) {
+                $userColumns .= ', `Password`';
+                $placeholders .= ', ?';
+                $userValues[] = $password;
+            }
+            $pdo->prepare(
+                'INSERT INTO users (' . $userColumns . ') VALUES (' . $placeholders . ')'
+            )->execute($userValues);
             $userId = (int)$pdo->lastInsertId();
             $pdo->commit();
         } catch (Exception $e) {
@@ -116,8 +141,46 @@ try {
         Json::ok('Akun HR berhasil ditambahkan', array('data' => array(
             'user_id' => $userId,
             'employee_id' => $employeeId,
+            'admin_id' => $adminId,
             'company_id' => $companyId
         )));
+    }
+
+    if ($method === 'DELETE') {
+        $data = Json::readRequest();
+        $id = isset($data['id']) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            Json::error('id wajib diisi', 422);
+        }
+        $stmt = $pdo->prepare(
+            'SELECT u.id, u.admin_id, u.employee_id
+             FROM users u WHERE u.id = ? AND u.role IN ("hr", "super_admin") LIMIT 1'
+        );
+        $stmt->execute(array($id));
+        $target = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$target) {
+            Json::error('Akun HR/Admin tidak ditemukan', 404);
+        }
+
+        $pdo->beginTransaction();
+        try {
+            if (!empty($target['admin_id'])) {
+                $pdo->prepare('DELETE FROM admins WHERE id = ?')
+                    ->execute(array((int)$target['admin_id']));
+            }
+            if (!empty($target['employee_id'])) {
+                $pdo->prepare('DELETE FROM employees WHERE id = ?')
+                    ->execute(array((int)$target['employee_id']));
+            }
+            $pdo->prepare('DELETE FROM users WHERE id = ?')->execute(array($id));
+            $pdo->commit();
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+        Json::ok('Akun HR/Admin berhasil dihapus');
     }
 } catch (PDOException $e) {
     Json::error('Gagal mengelola akun HR', 500);
