@@ -214,6 +214,41 @@ class LeaveService
         return $stmt && $stmt->fetch() !== false;
     }
 
+    private function employeeName($employeeId)
+    {
+        $row = $this->db->selectOne(
+            'SELECT first_name, last_name FROM employees WHERE id = ? LIMIT 1',
+            array((int)$employeeId)
+        );
+        if (!$row) {
+            return 'Karyawan';
+        }
+        $nama = trim((string)$row['first_name'] . ' ' . (string)$row['last_name']);
+        return $nama !== '' ? $nama : 'Karyawan';
+    }
+
+    private function userName($userId)
+    {
+        $row = $this->db->selectOne(
+            'SELECT username FROM users WHERE id = ? LIMIT 1',
+            array((int)$userId)
+        );
+        if (!$row) {
+            return 'Leader';
+        }
+        $employee = $this->db->selectOne(
+            'SELECT first_name, last_name FROM employees WHERE user_name = ? LIMIT 1',
+            array((string)$row['username'])
+        );
+        if ($employee) {
+            $nama = trim((string)$employee['first_name'] . ' ' . (string)$employee['last_name']);
+            if ($nama !== '') {
+                return $nama;
+            }
+        }
+        return (string)$row['username'];
+    }
+
     public function createRequest($employeeId, $reason, $startDate, $endDate, $replacementEmployeeId, $leaderUserId = null, $companyId = null, $currentUserId = null)
     {
         $reason = trim((string)$reason);
@@ -311,9 +346,31 @@ class LeaveService
             $values
         );
 
+        $namaPemohon = $this->employeeName($employeeId);
+        $judulNotif = 'Pengajuan Cuti Baru';
+        $isiNotif = $namaPemohon . ' mengajukan cuti (' . $startDate . ' s/d ' . $endDate . ') menunggu persetujuan.';
+        if ($leaderUserId > 0) {
+            $this->notifications->notifyUser(
+                (int)$leaderUserId,
+                $judulNotif,
+                $isiNotif,
+                'leave_request',
+                'leave_request',
+                (int)$id
+            );
+        } else {
+            $this->notifications->notifyLeaders(
+                $judulNotif,
+                $isiNotif,
+                'leave_request',
+                'leave_request',
+                (int)$id,
+                isset($currentUserId) ? (int)$currentUserId : null
+            );
+        }
         $this->notifications->notifyHr(
-            'Pengajuan Cuti Baru',
-            'Terdapat pengajuan cuti baru menunggu persetujuan Anda.',
+            $judulNotif,
+            $isiNotif,
             'leave_request',
             'leave_request',
             $id
@@ -664,6 +721,15 @@ class LeaveService
             'leave_request',
             (int)$id
         );
+        $namaApprover = $this->userName($approverUserId);
+        $namaPemohon = $this->employeeName($row['employee_id']);
+        $this->notifications->notifyHr(
+            'Cuti Disetujui Leader',
+            $namaApprover . ' menyetujui cuti karyawan ' . $namaPemohon . ' (' . $period . ').',
+            'leave_request',
+            'leave_request',
+            (int)$id
+        );
         if ($row['replacement_employee_id']) {
             $this->notifications->notifyEmployee(
                 $row['replacement_employee_id'],
@@ -736,6 +802,15 @@ class LeaveService
             $row['employee_id'],
             'Pengajuan Cuti Ditolak',
             'Pengajuan cuti Anda ditolak. Alasan: ' . $rejectionReason,
+            'leave_request',
+            'leave_request',
+            (int)$id
+        );
+        $namaApprover = $this->userName($approverUserId);
+        $namaPemohon = $this->employeeName($row['employee_id']);
+        $this->notifications->notifyHr(
+            'Cuti Ditolak Leader',
+            $namaApprover . ' menolak cuti karyawan ' . $namaPemohon . '. Alasan: ' . $rejectionReason,
             'leave_request',
             'leave_request',
             (int)$id

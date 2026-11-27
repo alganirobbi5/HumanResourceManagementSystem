@@ -186,10 +186,19 @@ try {
     if ($namaKaryawan === '') {
         $namaKaryawan = (string)(isset($user['username']) ? $user['username'] : 'Karyawan');
     }
-    (new NotificationService())->notifyHr(
+    $notifikasi = new NotificationService();
+    $notifikasi->notifyHr(
         'Absen Masuk Karyawan',
         $namaKaryawan . ' melakukan absen masuk pukul ' . $waktu_sekarang,
         'attendance',
+        'attendance',
+        $attendanceId
+    );
+    $notifikasi->notifyUser(
+        isset($user['id']) ? (int)$user['id'] : 0,
+        'Absen Masuk Berhasil',
+        'Absen masuk Anda tercatat pukul ' . $waktu_sekarang,
+        'attendance_self',
         'attendance',
         $attendanceId
     );

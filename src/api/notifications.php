@@ -10,8 +10,15 @@ $service = new NotificationService();
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
+    $limit = isset($_GET['limit']) ? max(1, min(100, (int)$_GET['limit'])) : 50;
+    $rows = $service->forUser((int)$user['id'], $limit);
+    if (isset($user['role']) && $user['role'] === 'super_admin') {
+        $rows = array_values(array_filter($rows, function (array $row) {
+            return isset($row['type']) && $row['type'] === 'announcement';
+        }));
+    }
     Json::ok('OK', array(
-        'data' => $service->forUser((int)$user['id'], 15),
+        'data' => $rows,
         'unread' => $service->unreadCount((int)$user['id'])
     ));
 }

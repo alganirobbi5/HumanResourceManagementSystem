@@ -33,6 +33,40 @@ class NotificationService
         }
     }
 
+    public function notifyLeaders($title, $message, $type = 'general', $entityType = null, $entityId = null, $excludeUserId = null)
+    {
+        $sql = "SELECT DISTINCT u.id FROM leave_leaders ll
+                JOIN users u ON u.id = ll.user_id
+                WHERE u.is_active = 1";
+        $params = array();
+        if ($excludeUserId !== null) {
+            $sql .= ' AND u.id <> ?';
+            $params[] = (int)$excludeUserId;
+        }
+        try {
+            $rows = $this->db->selectAll($sql, $params);
+        } catch (Exception $e) {
+            return;
+        }
+        foreach ($rows as $row) {
+            $this->notifyUser($row['id'], $title, $message, $type, $entityType, $entityId);
+        }
+    }
+
+    public function notifyAllExceptSuperAdmin($title, $message, $type = 'general', $entityType = null, $entityId = null, $companyId = null)
+    {
+        $sql = "SELECT id FROM users WHERE is_active = 1 AND (role IS NULL OR role <> 'super_admin')";
+        $params = array();
+        if ($companyId !== null) {
+            $sql .= ' AND company_id = ?';
+            $params[] = (int)$companyId;
+        }
+        $rows = $this->db->selectAll($sql, $params);
+        foreach ($rows as $row) {
+            $this->notifyUser($row['id'], $title, $message, $type, $entityType, $entityId);
+        }
+    }
+
     public function notifyEmployee($employeeId, $title, $message, $type = 'general', $entityType = null, $entityId = null)
     {
         if (!$employeeId) {

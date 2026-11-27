@@ -78,6 +78,21 @@ try {
     }
     $stmt = $pdo->prepare('INSERT INTO notices (' . $columns . ') VALUES (' . $placeholders . ')');
     $stmt->execute($values);
+    $noticeId = (int)$pdo->lastInsertId();
+
+    try {
+        require_once __DIR__ . '/../service/NotificationService.php';
+        (new NotificationService())->notifyAllExceptSuperAdmin(
+            'Pengumuman Baru',
+            $title,
+            'announcement',
+            'notice',
+            $noticeId,
+            $companyId
+        );
+    } catch (Exception $e) {
+        error_log('[notif] notifikasi pengumuman gagal: ' . $e->getMessage());
+    }
 
     http_response_code(201);
     echo json_encode([

@@ -148,6 +148,37 @@ if ($companyId !== null) {
 $update = $pdo->prepare($updateSql);
 $update->execute($values);
 
+try {
+    require_once __DIR__ . '/../service/NotificationService.php';
+    $namaKaryawan = trim((string)(isset($user['username']) ? $user['username'] : 'Karyawan'));
+    $employeeRow = $pdo->prepare('SELECT first_name, last_name FROM employees WHERE id = ? LIMIT 1');
+    $employeeRow->execute(array((int)$employee_id));
+    if ($found = $employeeRow->fetch(PDO::FETCH_ASSOC)) {
+        $namaLengkap = trim((string)$found['first_name'] . ' ' . (string)$found['last_name']);
+        if ($namaLengkap !== '') {
+            $namaKaryawan = $namaLengkap;
+        }
+    }
+    $notifikasi = new NotificationService();
+    $notifikasi->notifyHr(
+        'Absen Pulang Karyawan',
+        $namaKaryawan . ' melakukan absen pulang pukul ' . $waktu_sekarang,
+        'attendance',
+        'attendance',
+        (int)$absen['id']
+    );
+    $notifikasi->notifyUser(
+        isset($user['id']) ? (int)$user['id'] : 0,
+        'Absen Pulang Berhasil',
+        'Absen pulang Anda tercatat pukul ' . $waktu_sekarang,
+        'attendance_self',
+        'attendance',
+        (int)$absen['id']
+    );
+} catch (Exception $e) {
+    error_log('[notif] notifikasi absen pulang gagal: ' . $e->getMessage());
+}
+
 Json::out(array(
     'success' => true,
     'message' => 'Absen pulang berhasil',
