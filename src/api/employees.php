@@ -77,7 +77,7 @@ if ($method === 'POST') {
 }
 
 $isHr = Auth::isHr();
-$sql = 'SELECT u.id AS user_id, e.id AS employee_id,
+$sql = 'SELECT u.id AS user_id, e.id AS employee_id, u.role AS user_role,
                COALESCE(NULLIF(u.username, ""), e.user_name) AS username,
                TRIM(CONCAT(e.first_name, " ", e.last_name)) AS full_name,
                e.email AS email,
@@ -116,6 +116,15 @@ $rows = $db->selectAll($sql, $params);
 
 $data = array();
 foreach ($rows as $row) {
+    $isLeader = (int)$row['is_leader'] === 1;
+    $userRole = strtolower(trim((string)$row['user_role']));
+    if ($isLeader) {
+        $role = 'leader';
+    } elseif (in_array($userRole, array('hr', 'admin', 'super_admin'), true)) {
+        $role = 'hr';
+    } else {
+        $role = 'employee';
+    }
     $data[] = array(
         'user_id' => $row['user_id'] !== null ? (int)$row['user_id'] : null,
         'employee_id' => (int)$row['employee_id'],
@@ -130,7 +139,9 @@ foreach ($rows as $row) {
         'whatsapp' => (string)$row['phone'],
         'company_name' => (string)$row['company_name'],
         'company_code' => (string)$row['company_code'],
-        'is_leader' => (int)$row['is_leader'],
+        'is_leader' => $isLeader ? 1 : 0,
+        'role' => $role,
+        'role_label' => $role,
         'department_id' => (int)$row['department_id'],
         'department_name' => (string)$row['department_name'],
         'designation_id' => (int)$row['designation_id'],
