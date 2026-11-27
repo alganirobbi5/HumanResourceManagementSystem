@@ -141,12 +141,6 @@ if ($isUpdate) {
     if (!$existing) {
         Json::error('Karyawan tidak ditemukan', 404);
     }
-    foreach (array_keys($data) as $key) {
-        $lowerKey = strtolower((string)$key);
-        if (strpos($lowerKey, 'password') !== false || in_array($lowerKey, array('pass', 'pwd'), true)) {
-            unset($data[$key]);
-        }
-    }
     $fieldMap = array(
         'full_name' => 'full_name',
         'first_name' => 'first_name',
@@ -164,7 +158,8 @@ if ($isUpdate) {
         'department_id' => 'department_id',
         'designation_id' => 'designation_id',
         'is_active' => 'status',
-        'status' => 'status'
+        'status' => 'status',
+        'password' => 'password'
     );
     $payload = array();
     foreach ($fieldMap as $source => $target) {
