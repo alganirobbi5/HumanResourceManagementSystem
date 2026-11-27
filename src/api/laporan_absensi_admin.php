@@ -140,6 +140,7 @@ try {
             'employee_name' => $nama,
             'first_name' => $nama,
             'last_name' => '',
+            'phone' => '',
             'department' => 'HR / Admin',
             'jabatan' => 'HR / Admin',
             'tanggal' => $row['tanggal'],

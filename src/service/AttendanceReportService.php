@@ -88,6 +88,7 @@ class AttendanceReportService
         $columns[] = 'e.first_name';
         $columns[] = 'e.last_name';
         $columns[] = 'e.user_name AS employee_nik';
+        $columns[] = 'e.mobile_no AS phone';
         $columns[] = 'u.username';
         if ($this->hasTable('departments')) {
             $columns[] = 'd.name AS department_name';
@@ -136,6 +137,7 @@ class AttendanceReportService
                 'last_name' => (string)$row['last_name'],
                 'username' => $row['username'],
                 'employee_nik' => $row['employee_nik'],
+                'phone' => isset($row['phone']) ? (string)$row['phone'] : '',
                 'department_name' => isset($row['department_name']) ? $row['department_name'] : '',
                 'designation_name' => isset($row['designation_name']) ? $row['designation_name'] : '',
                 'department' => isset($row['department_name']) ? $row['department_name'] : '',
@@ -217,6 +219,7 @@ class AttendanceReportService
                 'last_name' => '',
                 'username' => isset($row['username']) ? $row['username'] : null,
                 'employee_nik' => isset($row['username']) ? $row['username'] : null,
+                'phone' => '',
                 'department_name' => 'HR / Admin',
                 'designation_name' => 'HR / Admin',
                 'department' => 'HR / Admin',
@@ -307,6 +310,7 @@ class AttendanceReportService
                 'last_name' => '',
                 'username' => '',
                 'employee_nik' => '',
+                'phone' => '',
                 'department_name' => '',
                 'designation_name' => '',
                 'department' => '',

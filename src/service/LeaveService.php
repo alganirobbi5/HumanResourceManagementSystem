@@ -340,8 +340,9 @@ class LeaveService
                             LEFT JOIN employees le ON le.id = lu.employee_id';
         }
         return 'SELECT lr.*,
-                       e.first_name, e.last_name, e.user_name AS employee_nik,
-                       CONCAT_WS(" ", e.first_name, e.last_name) AS employee_name,
+                        e.first_name, e.last_name, e.user_name AS employee_nik,
+                        e.mobile_no AS phone,
+                        CONCAT_WS(" ", e.first_name, e.last_name) AS employee_name,
                        e.department_id, e.designation_id,
                        d.name AS department_name, dg.title AS designation_name,
                        r.first_name AS replacement_first_name, r.last_name AS replacement_last_name,
@@ -365,8 +366,8 @@ class LeaveService
     {
         $fields = 'l.id, l.employee_id, l.type, l.leave_from, l.leave_to, l.status,
                    FROM_UNIXTIME(l.created_at) AS created_at,
-                   e.first_name, e.last_name, e.user_name,
-                   CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap';
+                    e.first_name, e.last_name, e.user_name, e.mobile_no AS phone,
+                    CONCAT_WS(" ", e.first_name, e.last_name) AS nama_lengkap';
         foreach (array('reason', 'comment', 'catatan_leader', 'approved_by_name', 'decided_at') as $column) {
             if ($this->hasLeaveColumn($column)) {
                 $fields .= ', l.' . $column;

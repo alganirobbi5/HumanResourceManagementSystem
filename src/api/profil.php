@@ -20,9 +20,26 @@ $employee_id_from_client = isset($_GET['employee_id']) ? $_GET['employee_id'] : 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = Json::readRequest();
-    $email = isset($body['email']) ? trim((string)$body['email']) : '';
-    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $hasEmail = array_key_exists('email', $body);
+    $email = $hasEmail ? trim((string)$body['email']) : '';
+    $phone = null;
+    foreach (array('phone', 'mobile_no', 'contact', 'no_hp', 'whatsapp', 'number') as $phoneKey) {
+        if (array_key_exists($phoneKey, $body)) {
+            $phone = trim((string)$body[$phoneKey]);
+            break;
+        }
+    }
+    if ($hasEmail && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         Json::error('Alamat email tidak valid', 422);
+    }
+    if (!$hasEmail && $phone === null) {
+        Json::error('email atau phone wajib diisi', 422);
+    }
+    if ($phone !== null && strlen($phone) > 15) {
+        Json::error('Nomor HP maksimal 15 karakter', 422);
+    }
+    if ($phone !== null && !$user['employee_id']) {
+        Json::error('Akun ini tidak terhubung ke data karyawan', 422);
     }
 
     $pdo = DBConnection::pdo();
@@ -30,34 +47,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $updatedIn = '';
 
     try {
-        $updated = false;
-        if ($user['employee_id']) {
-            $col = $pdo->query("SHOW COLUMNS FROM employees LIKE 'email'");
-            if ($col && $col->fetch()) {
-                $stmt = $pdo->prepare('UPDATE employees SET email = ? WHERE id = ?');
-                $stmt->execute(array($email, (int)$user['employee_id']));
-                $updated = true;
-                $updatedIn = 'employees';
+        if ($hasEmail) {
+            $updated = false;
+            if ($user['employee_id']) {
+                $col = $pdo->query("SHOW COLUMNS FROM employees LIKE 'email'");
+                if ($col && $col->fetch()) {
+                    $stmt = $pdo->prepare('UPDATE employees SET email = ? WHERE id = ?');
+                    $stmt->execute(array($email, (int)$user['employee_id']));
+                    $updated = true;
+                    $updatedIn = 'employees';
+                }
+            }
+            if (!$updated) {
+                $col = $pdo->query("SHOW COLUMNS FROM users LIKE 'email'");
+                if ($col && $col->fetch()) {
+                    $stmt = $pdo->prepare('UPDATE users SET email = ? WHERE id = ?');
+                    $stmt->execute(array($email, (int)$user['id']));
+                    $updated = true;
+                    $updatedIn = 'users';
+                }
+            }
+            if (!$updated) {
+                Json::error('Kolom email belum tersedia pada database', 500);
             }
         }
-        if (!$updated) {
-            $col = $pdo->query("SHOW COLUMNS FROM users LIKE 'email'");
-            if ($col && $col->fetch()) {
-                $stmt = $pdo->prepare('UPDATE users SET email = ? WHERE id = ?');
-                $stmt->execute(array($email, (int)$user['id']));
-                $updated = true;
-                $updatedIn = 'users';
+        if ($phone !== null) {
+            $phoneColumn = 'mobile_no';
+            foreach (array('mobile_no', 'phone', 'contact', 'no_hp') as $candidate) {
+                $col = $pdo->query("SHOW COLUMNS FROM employees LIKE '" . $candidate . "'");
+                if ($col && $col->fetch()) {
+                    $phoneColumn = $candidate;
+                    break;
+                }
             }
-        }
-        if (!$updated) {
-            Json::error('Kolom email belum tersedia pada database', 500);
+            $pdo->prepare('UPDATE employees SET ' . $phoneColumn . ' = ? WHERE id = ?')
+                ->execute(array($phone, (int)$user['employee_id']));
         }
     } catch (PDOException $e) {
-        Json::error('Gagal menyimpan email profil: ' . $e->getMessage(), 500);
+        Json::error('Gagal menyimpan profil: ' . $e->getMessage(), 500);
     }
 
-    Json::ok('Email profil berhasil disimpan', array(
-        'email' => $email,
+    Json::ok('Profil berhasil disimpan', array(
+        'email' => $hasEmail ? $email : null,
+        'phone' => $phone,
         'tersimpan_di' => $updatedIn,
     ));
     exit;
@@ -74,7 +106,7 @@ if (!$isHr) {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    $stmt = $pdo->prepare("SELECT u.username, u.role, e.first_name, e.last_name, e.email, u.avatar 
+    $stmt = $pdo->prepare("SELECT u.username, u.role, e.first_name, e.last_name, e.email, e.mobile_no AS phone, u.avatar
                            FROM users u 
                            JOIN employees e ON e.id = u.employee_id 
                            WHERE u.employee_id = ? LIMIT 1");
@@ -86,6 +118,7 @@ if (!$isHr) {
     }
 
     $profil['nama_lengkap'] = trim($profil['first_name'] . ' ' . $profil['last_name']);
+    $profil['phone'] = (string)(isset($profil['phone']) ? $profil['phone'] : '');
 
     // Cek sisa cuti
     $stmtCuti = $pdo->prepare("SELECT remaining_leave FROM employee_leaves WHERE employee_id = ? LIMIT 1");
@@ -111,7 +144,7 @@ if ($isHr && $employee_id_from_client) {
     $pdo = DBConnection::pdo();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    $stmt = $pdo->prepare("SELECT u.username, u.role, e.first_name, e.last_name, e.email, u.avatar 
+    $stmt = $pdo->prepare("SELECT u.username, u.role, e.first_name, e.last_name, e.email, e.mobile_no AS phone, u.avatar
                            FROM users u 
                            JOIN employees e ON e.id = u.employee_id 
                            WHERE u.employee_id = ? LIMIT 1");
@@ -128,6 +161,7 @@ if ($isHr && $employee_id_from_client) {
     }
 
     $profil['nama_lengkap'] = trim($profil['first_name'] . ' ' . $profil['last_name']);
+    $profil['phone'] = (string)(isset($profil['phone']) ? $profil['phone'] : '');
 
     // Cek sisa cuti
     $stmtCuti = $pdo->prepare("SELECT remaining_leave FROM employee_leaves WHERE employee_id = ? LIMIT 1");
@@ -167,6 +201,7 @@ if ($isHr && !$employee_id_from_client) {
         'first_name' => $user['display_name'],
         'last_name' => '',
         'email' => $email,
+        'phone' => '',
         'sisa_cuti' => 0,
     )));
 }

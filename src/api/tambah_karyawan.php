@@ -25,10 +25,15 @@ $payload = array(
     'username' => $username,
     'password' => isset($data['password']) ? $data['password'] : '',
     'email' => isset($data['email']) ? $data['email'] : (isset($data['confirm_email']) ? $data['confirm_email'] : ''),
-    'mobile_no' => isset($data['mobile_no']) ? $data['mobile_no'] : (isset($data['number']) ? $data['number'] : ''),
+    'mobile_no' => isset($data['mobile_no']) ? $data['mobile_no']
+        : (isset($data['phone']) ? $data['phone']
+        : (isset($data['contact']) ? $data['contact']
+        : (isset($data['no_hp']) ? $data['no_hp']
+        : (isset($data['whatsapp']) ? $data['whatsapp']
+        : (isset($data['number']) ? $data['number'] : ''))))),
     'gender' => isset($data['gender']) ? $data['gender'] : '',
-    'department_id' => isset($data['department_id']) ? $data['department_id'] : (isset($data['department']) ? $data['department'] : 0),
-    'designation_id' => isset($data['designation_id']) ? $data['designation_id'] : (isset($data['designation']) ? $data['designation'] : 0),
+    'department_id' => isset($data['department_id']) ? $data['department_id'] : (isset($data['department']) ? $data['department'] : ''),
+    'designation_id' => isset($data['designation_id']) ? $data['designation_id'] : (isset($data['designation']) ? $data['designation'] : ''),
     'status' => isset($data['status']) ? $data['status'] : 1,
     'create_by' => isset($hr['username']) ? $hr['username'] : null,
     'company_id' => Auth::companyId(),

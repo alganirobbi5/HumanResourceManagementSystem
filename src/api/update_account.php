@@ -23,10 +23,24 @@ $username = $hasUsername ? trim((string)$data['username']) : null;
 $password = $hasPassword ? (string)$data['password'] : null;
 $currentPassword = isset($data['current_password']) ? (string)$data['current_password'] : '';
 
-if ((!$hasUsername && !$hasPassword)
+$phone = null;
+foreach (array('phone', 'mobile_no', 'contact', 'no_hp', 'whatsapp', 'number') as $phoneKey) {
+    if (array_key_exists($phoneKey, $data)) {
+        $phone = trim((string)$data[$phoneKey]);
+        break;
+    }
+}
+
+if ((!$hasUsername && !$hasPassword && $phone === null)
     || ($hasUsername && $username === '')
     || ($hasPassword && $password === '')) {
-    Json::error('username atau password wajib diisi', 422);
+    Json::error('username, password, atau phone wajib diisi', 422);
+}
+if ($phone !== null && strlen($phone) > 15) {
+    Json::error('Nomor HP maksimal 15 karakter', 422);
+}
+if ($phone !== null && !$user['employee_id']) {
+    Json::error('Akun ini tidak terhubung ke data karyawan', 422);
 }
 if ($username !== null && strlen($username) > 50) {
     Json::error('Username maksimal 50 karakter', 422);
@@ -90,6 +104,18 @@ try {
             $pdo->prepare('UPDATE employees SET user_name = ? WHERE id = ?')
                 ->execute(array($username, (int)$user['employee_id']));
         }
+        if ($phone !== null && $user['employee_id']) {
+            $phoneColumn = 'mobile_no';
+            foreach (array('mobile_no', 'phone', 'contact', 'no_hp') as $candidate) {
+                $column = $pdo->query("SHOW COLUMNS FROM employees LIKE '" . $candidate . "'");
+                if ($column && $column->fetch()) {
+                    $phoneColumn = $candidate;
+                    break;
+                }
+            }
+            $pdo->prepare('UPDATE employees SET ' . $phoneColumn . ' = ? WHERE id = ?')
+                ->execute(array($phone, (int)$user['employee_id']));
+        }
         $pdo->commit();
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
@@ -105,6 +131,8 @@ try {
         'username' => $username !== null ? $username : $user['username'],
         'username_berubah' => $username !== null,
         'password_berubah' => $newHash !== null,
+        'phone' => $phone !== null ? $phone : (isset($user['phone']) ? (string)$user['phone'] : ''),
+        'phone_berubah' => $phone !== null,
     ));
 } catch (PDOException $e) {
     Json::error('Gagal memperbarui akun', 500);

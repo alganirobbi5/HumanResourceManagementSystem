@@ -212,7 +212,7 @@ class Auth
         $row = $db->selectOne(
             'SELECT u.id, u.username, u.role, u.employee_id, u.is_active' . $companySelect . ',
                     e.first_name, e.last_name, e.department_id, e.designation_id,
-                    e.user_name AS employee_nik,
+                    e.mobile_no AS phone, e.user_name AS employee_nik,
                     d.name AS department_name, dg.title AS designation_name
              FROM users u
              LEFT JOIN employees e ON e.id = u.employee_id'

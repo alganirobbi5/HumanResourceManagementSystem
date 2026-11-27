@@ -15,12 +15,14 @@ Json::ok('OK', array(
         'company_code' => Auth::companyCode(),
         'company_name' => Auth::companyName(),
         'display_name' => $user['display_name'],
+        'phone' => isset($user['phone']) ? (string)$user['phone'] : '',
         'is_leave_leader' => (new LeaveLeaderService())->isLeader((int)$user['id'], Auth::companyId()),
         'employee' => $user['employee_id'] ? array(
             'id' => (int)$user['employee_id'],
             'nik' => $user['employee_nik'],
             'department' => $user['department_name'],
             'position' => $user['designation_name'],
+            'phone' => isset($user['phone']) ? (string)$user['phone'] : '',
         ) : null,
     )
 ));

@@ -24,6 +24,23 @@ class EmployeeAccountService
         return (bool)$this->pdo->query("SHOW TABLES LIKE '" . $table . "'")->fetchColumn();
     }
 
+    private function phoneColumn()
+    {
+        foreach (array('mobile_no', 'phone', 'contact', 'no_hp') as $column) {
+            if ($this->hasColumn('employees', $column)) {
+                return $column;
+            }
+        }
+        return 'mobile_no';
+    }
+
+    private function emptyMasterValue($column)
+    {
+        $stmt = $this->pdo->query("SHOW COLUMNS FROM employees LIKE '" . $column . "'");
+        $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
+        return $row && isset($row['Null']) && strtoupper((string)$row['Null']) === 'YES' ? null : 0;
+    }
+
     private function employeeByUsername($username)
     {
         $stmt = $this->pdo->prepare('SELECT id FROM employees WHERE user_name = ? LIMIT 1');
@@ -107,7 +124,14 @@ class EmployeeAccountService
             : (isset($data['username']) ? $data['username'] : '')));
         $password = (string)(isset($data['password']) ? $data['password'] : '');
         $email = trim((string)(isset($data['email']) ? $data['email'] : ''));
-        $mobileNo = trim((string)(isset($data['mobile_no']) ? $data['mobile_no'] : ''));
+        $mobileNo = '';
+        foreach (array('mobile_no', 'phone', 'contact', 'no_hp', 'whatsapp', 'number') as $phoneKey) {
+            if (array_key_exists($phoneKey, $data)) {
+                $mobileNo = trim((string)$data[$phoneKey]);
+                break;
+            }
+        }
+        $phoneColumn = $this->phoneColumn();
         $gender = $this->normalizeGender(trim((string)(isset($data['gender']) ? $data['gender'] : '')));
         $departmentId = isset($data['department_id']) ? (string)$data['department_id'] : '';
         $designationId = isset($data['designation_id']) ? (string)$data['designation_id'] : '';
@@ -134,17 +158,25 @@ class EmployeeAccountService
         if ($email === '' || strlen($email) > 30) {
             throw new InvalidArgumentException('email wajib diisi (maksimal 30 karakter)');
         }
-        if ($mobileNo === '' || strlen($mobileNo) > 15) {
-            throw new InvalidArgumentException('mobile_no wajib diisi (maksimal 15 karakter)');
+        if (strlen($mobileNo) > 15) {
+            throw new InvalidArgumentException('phone maksimal 15 karakter');
         }
-        if (!ctype_digit($departmentId) || (int)$departmentId <= 0
+        if ($departmentId === '' || (int)$departmentId <= 0) {
+            $departmentValue = $this->emptyMasterValue('department_id');
+        } elseif (!ctype_digit($departmentId)
             || !$this->masterRow('departments', $departmentId, $companyId)) {
             throw new InvalidArgumentException('department_id tidak valid');
+        } else {
+            $departmentValue = (int)$departmentId;
         }
-        $designationTable = $this->hasTable('employee_designations') ? 'employee_designations' : 'designations';
-        if (!ctype_digit($designationId) || (int)$designationId <= 0
+        $designationTable = $this->designationTable();
+        if ($designationId === '' || (int)$designationId <= 0) {
+            $designationValue = $this->emptyMasterValue('designation_id');
+        } elseif (!ctype_digit($designationId)
             || !$this->masterRow($designationTable, $designationId, $companyId)) {
             throw new InvalidArgumentException('designation_id tidak valid');
+        } else {
+            $designationValue = (int)$designationId;
         }
         if (!ctype_digit($status) || !in_array((int)$status, array(0, 1), true)) {
             throw new InvalidArgumentException('status harus 0 atau 1');
@@ -154,9 +186,9 @@ class EmployeeAccountService
         }
 
         $columns = array('first_name', 'last_name', 'user_name', 'password', 'gender',
-            'email', 'department_id', 'designation_id', 'mobile_no', 'status');
+            'email', 'department_id', 'designation_id', $phoneColumn, 'status');
         $values = array($firstName, $lastName, $username, $password, $gender,
-            $email, (int)$departmentId, (int)$designationId, $mobileNo, (int)$status);
+            $email, $departmentValue, $designationValue, $mobileNo, (int)$status);
         if ($this->hasColumn('employees', 'create_by')) {
             $columns[] = 'create_by';
             $values[] = $createBy;
@@ -306,10 +338,17 @@ class EmployeeAccountService
         if ($email !== null && strlen($email) > 30) {
             throw new InvalidArgumentException('email maksimal 30 karakter');
         }
-        $phone = $pick(array('mobile_no', 'phone', 'contact'));
+        $phone = null;
+        foreach (array('mobile_no', 'phone', 'contact', 'no_hp', 'whatsapp', 'number') as $phoneKey) {
+            if (array_key_exists($phoneKey, $data)) {
+                $phone = trim((string)$data[$phoneKey]);
+                break;
+            }
+        }
         if ($phone !== null && strlen($phone) > 15) {
             throw new InvalidArgumentException('phone maksimal 15 karakter');
         }
+        $phoneColumn = $this->phoneColumn();
 
         $statusRaw = null;
         foreach (array('is_active', 'status') as $key) {
@@ -342,8 +381,8 @@ class EmployeeAccountService
         if ($email !== null && $this->hasColumn('employees', 'email')) {
             $employeeChanges['email'] = $email;
         }
-        if ($phone !== null && $this->hasColumn('employees', 'mobile_no')) {
-            $employeeChanges['mobile_no'] = $phone;
+        if ($phone !== null && $this->hasColumn('employees', $phoneColumn)) {
+            $employeeChanges[$phoneColumn] = $phone;
         }
         if ($status !== null && $this->hasColumn('employees', 'status')) {
             $employeeChanges['status'] = $status;
@@ -356,7 +395,7 @@ class EmployeeAccountService
             }
             $id = trim((string)$data[$field]);
             if ($id === '' || (int)$id <= 0) {
-                $employeeChanges[$field] = 0;
+                $employeeChanges[$field] = $this->emptyMasterValue($field);
                 continue;
             }
             if (!ctype_digit($id) || !$this->masterRow($table, $id, $companyId)) {

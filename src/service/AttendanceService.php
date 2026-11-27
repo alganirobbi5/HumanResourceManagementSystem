@@ -138,7 +138,8 @@ class AttendanceService
     {
         $filter = $this->deletedFilter('a');
         $sql = 'SELECT a.*, e.first_name, e.last_name, e.user_name AS employee_nik,
-                       d.name AS department_name, dg.title AS designation_name
+                        e.mobile_no AS phone,
+                        d.name AS department_name, dg.title AS designation_name
                 FROM attendances a
                 LEFT JOIN employees e ON e.id = a.employee_id
                 LEFT JOIN departments d ON d.id = e.department_id
@@ -177,7 +178,7 @@ class AttendanceService
         $rows = $this->db->selectAll(
             'SELECT a.id, a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude,
                     a.status, a.created_at' . $this->optionalAttendanceColumns() . ',
-                    e.first_name, e.last_name
+                    e.first_name, e.last_name, e.mobile_no AS phone
              FROM attendances a
              LEFT JOIN employees e ON e.id = a.employee_id' . $whereAlias . '
              ORDER BY a.`date` DESC, a.clock_in DESC
@@ -235,6 +236,7 @@ class AttendanceService
             'SELECT a.id, a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude,
                     a.gps_accuracy, a.status, a.created_at' . $this->optionalAttendanceColumns() . ',
                     e.first_name, e.last_name, e.user_name AS employee_nik,
+                    e.mobile_no AS phone,
                     d.name AS department_name, dg.title AS designation_name
              FROM attendances a
              LEFT JOIN employees e ON e.id = a.employee_id
@@ -278,6 +280,7 @@ class AttendanceService
         return $this->db->selectAll(
             'SELECT a.employee_id, a.`date`, a.clock_in, a.latitude, a.longitude, a.status,
                     e.first_name, e.last_name, e.user_name AS employee_nik,
+                    e.mobile_no AS phone,
                     d.name AS department_name, dg.title AS designation_name
              FROM attendances a
              LEFT JOIN employees e ON e.id = a.employee_id
