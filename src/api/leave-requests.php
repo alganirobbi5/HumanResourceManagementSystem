@@ -6,6 +6,7 @@ require_once __DIR__ . '/../common/Config.php';
 require_once __DIR__ . '/../service/LeaveService.php';
 require_once __DIR__ . '/../service/LeaveLeaderService.php';
 require_once __DIR__ . '/../service/RateLimiter.php';
+require_once __DIR__ . '/../service/AdminLeaveIdentityService.php';
 
 $user = Auth::requireApi();
 $method = $_SERVER['REQUEST_METHOD'];
@@ -79,7 +80,12 @@ if ($method === 'POST') {
     $action = isset($body['action']) ? $body['action'] : '';
 
     if ($action === 'create') {
-        if (!$user['employee_id']) {
+        $pemohonEmployeeId = AdminLeaveIdentityService::ensureEmployeeId(
+            DBConnection::pdo(),
+            $user,
+            $companyId
+        );
+        if (!$pemohonEmployeeId) {
             Json::error('Akun ini tidak terhubung ke data karyawan', 400);
         }
         if (!RateLimiter::allow('leave_create', Config::RATE_LIMIT_LEAVE_SECONDS)) {
@@ -91,7 +97,7 @@ if ($method === 'POST') {
         }
         try {
             $row = $service->createRequest(
-                $user['employee_id'],
+                $pemohonEmployeeId,
                 isset($body['reason']) ? $body['reason'] : '',
                 isset($body['start_date']) ? $body['start_date'] : '',
                 isset($body['end_date']) ? $body['end_date'] : '',

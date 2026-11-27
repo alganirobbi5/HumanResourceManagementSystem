@@ -73,7 +73,6 @@ class AttendanceReportService
     private function employeeRows($companyId = null)
     {
         $jamMasukKerja = $this->jamMasukKerja($companyId);
-        $holidayDates = $this->holidayDates();
         $columns = array('a.id', 'a.employee_id', 'a.date', 'a.clock_in', 'a.clock_out',
             'a.total_work', 'a.status', 'a.latitude', 'a.longitude');
         foreach (array('gps_accuracy', 'selfie_path', 'selfie_out_path') as $column) {
@@ -153,9 +152,7 @@ class AttendanceReportService
                 'clock_out' => $row['clock_out'],
                 'jam_pulang' => $row['clock_out'],
                 'total_work' => $row['total_work'],
-                'status' => isset($holidayDates[(string)$row['date']])
-                    ? 'Libur'
-                    : ((string)$row['status'] !== '' ? (string)$row['status'] : 'recorded'),
+                'status' => (string)$row['status'] !== '' ? (string)$row['status'] : 'recorded',
                 'terlambat' => ($jamMasukKerja !== null && !empty($row['clock_in'])
                     && substr((string)$row['clock_in'], 0, 5) > $jamMasukKerja),
                 'jam_masuk_kerja' => $jamMasukKerja,
@@ -175,7 +172,6 @@ class AttendanceReportService
 
     private function adminRows($companyId = null)
     {
-        $holidayDates = $this->holidayDates();
         if (!$this->hasTable('admin_attendances')) {
             return array();
         }
@@ -237,7 +233,7 @@ class AttendanceReportService
                 'clock_out' => $row['waktu_pulang'],
                 'jam_pulang' => $row['waktu_pulang'],
                 'total_work' => null,
-                'status' => isset($holidayDates[(string)$row['tanggal']]) ? 'Libur' : 'recorded',
+                'status' => 'recorded',
                 'latitude' => $row['latitude_masuk'],
                 'longitude' => $row['longitude_masuk'],
                 'out_latitude' => $row['latitude_pulang'],

@@ -14,6 +14,7 @@ require_once __DIR__ . '/../common/Auth.php';
 require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../service/IzinKeluarService.php';
 require_once __DIR__ . '/../service/LeaveLeaderService.php';
+require_once __DIR__ . '/../service/AdminLeaveIdentityService.php';
 
 $user = Auth::requireApi();
 $userId = Auth::userId();
@@ -57,7 +58,12 @@ if ($method === 'GET') {
 }
 
 if ($method === 'POST') {
-    if (!$user['employee_id']) {
+    $pemohonEmployeeId = AdminLeaveIdentityService::ensureEmployeeId(
+        DBConnection::pdo(),
+        $user,
+        $companyId
+    );
+    if (!$pemohonEmployeeId) {
         Json::error('Akun ini tidak terhubung ke data karyawan', 400);
     }
     $data = Json::readRequest();
@@ -66,7 +72,7 @@ if ($method === 'POST') {
         Json::error('Tidak dapat memilih diri sendiri sebagai Leader persetujuan', 422);
     }
     try {
-        $row = $service->createRequest((int)$user['employee_id'], $data, $companyId, (int)$user['id']);
+        $row = $service->createRequest((int)$pemohonEmployeeId, $data, $companyId, (int)$user['id']);
         Json::ok('Pengajuan izin keluar berhasil disimpan dan menunggu persetujuan', array('data' => $row));
     } catch (InvalidArgumentException $e) {
         Json::error($e->getMessage(), (int)$e->getCode() === 404 ? 404 : 422);

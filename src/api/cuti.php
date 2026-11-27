@@ -9,6 +9,7 @@ require_once __DIR__ . '/../common/Json.php';
 require_once __DIR__ . '/../common/DBConnection.php';
 require_once __DIR__ . '/../service/LeaveLeaderService.php';
 require_once __DIR__ . '/../service/LeaveService.php';
+require_once __DIR__ . '/../service/AdminLeaveIdentityService.php';
 
 $user = Auth::requireApi();
 $leaders = new LeaveLeaderService();
@@ -41,7 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
 
-if (!$user['employee_id']) {
+$pemohonEmployeeId = AdminLeaveIdentityService::ensureEmployeeId(
+    DBConnection::pdo(),
+    $user,
+    $companyId
+);
+if (!$pemohonEmployeeId) {
     Json::error('Akun ini tidak terhubung ke data karyawan', 400);
 }
 
@@ -73,7 +79,7 @@ try {
     $totalLeave = $leaveService->calculateDays($startDate, $endDate, $companyId);
 
     $columns = array('employee_id', 'type', 'leave_from', 'leave_to', 'total_leave', 'status', 'leader_user_id', 'created_at');
-    $values = array((int)$user['employee_id'], $judul, $startDate, $endDate, $totalLeave, 1, $leaderUserId, time());
+    $values = array((int)$pemohonEmployeeId, $judul, $startDate, $endDate, $totalLeave, 1, $leaderUserId, time());
     if ($companyId !== null) {
         $columns[] = 'company_id';
         $values[] = (int)$companyId;

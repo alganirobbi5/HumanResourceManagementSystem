@@ -132,30 +132,6 @@ function validateAttachment($value)
         return array('ok' => false, 'message' => 'Format lampiran tidak didukung');
     }
 
-    $mime = strtolower($m[1]);
-    $allowed = array(
-        'image/jpeg' => array('jpg', 'jpeg'),
-        'image/png' => array('png'),
-        'image/webp' => array('webp'),
-        'image/gif' => array('gif'),
-        'application/pdf' => array('pdf'),
-        'text/plain' => array('txt'),
-        'application/msword' => array('doc'),
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => array('docx'),
-        'application/vnd.ms-excel' => array('xls'),
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => array('xlsx'),
-    );
-    if (!isset($allowed[$mime])) {
-        return array('ok' => false, 'message' => 'Jenis lampiran tidak diizinkan');
-    }
-
-    if ($namaFile !== '') {
-        $ext = strtolower(pathinfo($namaFile, PATHINFO_EXTENSION));
-        if ($ext !== '' && !in_array($ext, $allowed[$mime], true)) {
-            return array('ok' => false, 'message' => 'Ekstensi file tidak sesuai dengan jenis lampiran');
-        }
-    }
-
     $bytes = base64_decode($m[2], true);
     if ($bytes === false || strlen($bytes) > 10 * 1024 * 1024) {
         return array('ok' => false, 'message' => 'Isi lampiran tidak valid atau terlalu besar');
