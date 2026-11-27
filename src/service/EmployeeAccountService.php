@@ -245,70 +245,155 @@ class EmployeeAccountService
 
     public function update($employeeId, array $data)
     {
-        $stmt = $this->pdo->prepare('SELECT id, company_id FROM employees WHERE id = ? LIMIT 1');
+        $stmt = $this->pdo->prepare(
+            'SELECT id, company_id, user_name FROM employees WHERE id = ? LIMIT 1'
+        );
         $stmt->execute([(int)$employeeId]);
         $employee = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$employee) {
             throw new InvalidArgumentException('Karyawan tidak ditemukan', 404);
         }
         $companyId = $employee['company_id'] !== null ? (int)$employee['company_id'] : null;
-        if (array_key_exists('department_id', $data)
-            && !$this->masterRow('departments', $data['department_id'], $companyId)) {
-            throw new InvalidArgumentException('Department tidak valid untuk perusahaan ini', 422);
+
+        $pick = function (array $keys) use ($data) {
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $data)) {
+                    return trim((string)$data[$key]);
+                }
+            }
+            return null;
+        };
+
+        $firstName = $pick(array('first_name'));
+        $lastName = $pick(array('last_name'));
+        if (array_key_exists('full_name', $data)) {
+            $parts = preg_split('/\s+/', trim((string)$data['full_name']), 2);
+            $firstName = $parts[0];
+            $lastName = isset($parts[1]) ? $parts[1] : '';
         }
-        if (array_key_exists('designation_id', $data)) {
-            $designationTable = $this->hasTable('employee_designations') ? 'employee_designations' : 'designations';
-            if (!$this->masterRow($designationTable, $data['designation_id'], $companyId)) {
-                throw new InvalidArgumentException('Jabatan tidak valid untuk perusahaan ini', 422);
+        if ($firstName !== null && ($firstName === '' || strlen($firstName) > 30)) {
+            throw new InvalidArgumentException('first_name wajib diisi (maksimal 30 karakter)');
+        }
+        if ($lastName !== null && strlen($lastName) > 30) {
+            throw new InvalidArgumentException('last_name maksimal 30 karakter');
+        }
+
+        $username = $pick(array('username', 'user_name'));
+        if ($username !== null && ($username === '' || strlen($username) > 30)) {
+            throw new InvalidArgumentException('username wajib diisi (maksimal 30 karakter)');
+        }
+        if ($username !== null) {
+            $currentUser = $this->userByEmployeeId($employeeId);
+            if ($this->userByUsername($username, $currentUser ? (int)$currentUser['id'] : null)) {
+                throw new RuntimeException('Username sudah digunakan', 409);
+            }
+            if ($username !== (string)$employee['user_name']) {
+                $employeeTaken = $this->pdo->prepare(
+                    'SELECT id FROM employees WHERE user_name = ? AND id <> ? LIMIT 1'
+                );
+                $employeeTaken->execute(array($username, (int)$employeeId));
+                if ($employeeTaken->fetch()) {
+                    throw new RuntimeException('Username sudah digunakan', 409);
+                }
             }
         }
 
-        $fields = array();
-        $params = array();
-        $allowed = array('first_name', 'last_name', 'email', 'mobile_no', 'gender', 'department_id', 'designation_id', 'status');
-        foreach ($allowed as $field) {
+        $email = $pick(array('email'));
+        if ($email !== null && strlen($email) > 30) {
+            throw new InvalidArgumentException('email maksimal 30 karakter');
+        }
+        $phone = $pick(array('mobile_no', 'phone', 'contact'));
+        if ($phone !== null && strlen($phone) > 15) {
+            throw new InvalidArgumentException('phone maksimal 15 karakter');
+        }
+
+        $statusRaw = null;
+        foreach (array('is_active', 'status') as $key) {
+            if (array_key_exists($key, $data)) {
+                $statusRaw = $data[$key];
+                break;
+            }
+        }
+        $status = null;
+        if ($statusRaw !== null) {
+            if (is_bool($statusRaw)) {
+                $status = $statusRaw ? 1 : 0;
+            } elseif (ctype_digit((string)$statusRaw) && in_array((int)$statusRaw, array(0, 1), true)) {
+                $status = (int)$statusRaw;
+            } else {
+                throw new InvalidArgumentException('is_active harus 0 atau 1');
+            }
+        }
+
+        $employeeChanges = array();
+        if ($firstName !== null && $this->hasColumn('employees', 'first_name')) {
+            $employeeChanges['first_name'] = $firstName;
+        }
+        if ($lastName !== null && $this->hasColumn('employees', 'last_name')) {
+            $employeeChanges['last_name'] = $lastName;
+        }
+        if ($username !== null && $this->hasColumn('employees', 'user_name')) {
+            $employeeChanges['user_name'] = $username;
+        }
+        if ($email !== null && $this->hasColumn('employees', 'email')) {
+            $employeeChanges['email'] = $email;
+        }
+        if ($phone !== null && $this->hasColumn('employees', 'mobile_no')) {
+            $employeeChanges['mobile_no'] = $phone;
+        }
+        if ($status !== null && $this->hasColumn('employees', 'status')) {
+            $employeeChanges['status'] = $status;
+        }
+
+        $designationTable = $this->designationTable();
+        foreach (array('department_id' => 'departments', 'designation_id' => $designationTable) as $field => $table) {
             if (!array_key_exists($field, $data) || !$this->hasColumn('employees', $field)) {
                 continue;
             }
-            $fields[] = $field . ' = ?';
-            $params[] = $data[$field];
+            $id = trim((string)$data[$field]);
+            if ($id === '' || (int)$id <= 0) {
+                $employeeChanges[$field] = 0;
+                continue;
+            }
+            if (!ctype_digit($id) || !$this->masterRow($table, $id, $companyId)) {
+                throw new InvalidArgumentException($field . ' tidak valid untuk perusahaan ini', 422);
+            }
+            $employeeChanges[$field] = (int)$id;
         }
-        $password = array_key_exists('password', $data) ? (string)$data['password'] : null;
-        if ($password !== null && $password !== '' && $this->hasColumn('employees', 'password')) {
-            $fields[] = 'password = ?';
-            $params[] = $password;
-        }
-        $username = isset($data['username']) ? trim((string)$data['username']) : null;
 
         $this->pdo->beginTransaction();
         try {
-            if ($fields) {
+            if ($employeeChanges) {
+                $fields = array();
+                $params = array();
+                foreach ($employeeChanges as $field => $value) {
+                    $fields[] = $field . ' = ?';
+                    $params[] = $value;
+                }
                 $params[] = (int)$employeeId;
-                $updateSql = 'UPDATE employees SET ' . implode(', ', $fields) . ' WHERE id = ?';
+                $sql = 'UPDATE employees SET ' . implode(', ', $fields) . ' WHERE id = ?';
                 if ($companyId !== null) {
-                    $updateSql .= ' AND company_id = ?';
+                    $sql .= ' AND company_id = ?';
                     $params[] = $companyId;
                 }
-                $this->pdo->prepare($updateSql)->execute($params);
+                $this->pdo->prepare($sql)->execute($params);
             }
+
             $user = $this->userByEmployeeId($employeeId);
+            $userFields = array();
+            $userParams = array();
             if ($user) {
-                $userFields = array();
-                $userParams = array();
-                if ($password !== null && $password !== '') {
-                    $userFields[] = 'password_hash = ?';
-                    $userParams[] = password_hash($password, PASSWORD_BCRYPT);
-                }
-                if ($username !== null && $username !== '') {
-                    if ($this->userByUsername($username, (int)$user['id'])) {
-                        throw new RuntimeException('Username sudah digunakan', 409);
-                    }
+                if ($username !== null) {
                     $userFields[] = 'username = ?';
                     $userParams[] = $username;
                 }
-                if (array_key_exists('status', $data)) {
+                if ($email !== null && $this->hasColumn('users', 'email')) {
+                    $userFields[] = 'email = ?';
+                    $userParams[] = $email;
+                }
+                if ($status !== null) {
                     $userFields[] = 'is_active = ?';
-                    $userParams[] = (int)$data['status'] === 1 ? 1 : 0;
+                    $userParams[] = $status;
                 }
                 if ($userFields) {
                     $userParams[] = (int)$user['id'];
@@ -316,22 +401,32 @@ class EmployeeAccountService
                         ->execute($userParams);
                 }
             } elseif ($username !== null && $username !== '') {
-                $secret = $password;
-                if ($secret === null || $secret === '') {
-                    $secretStmt = $this->pdo->prepare('SELECT password FROM employees WHERE id = ? LIMIT 1');
-                    $secretStmt->execute([(int)$employeeId]);
-                    $secret = (string)$secretStmt->fetchColumn();
-                }
-                $this->insertUser($employeeId, $username, $secret, 1);
+                $secretStmt = $this->pdo->prepare('SELECT password FROM employees WHERE id = ? LIMIT 1');
+                $secretStmt->execute([(int)$employeeId]);
+                $this->insertUser($employeeId, $username, (string)$secretStmt->fetchColumn(),
+                    $status === null ? 1 : $status, $companyId);
             }
             $this->pdo->commit();
             return true;
+        } catch (PDOException $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            if ((string)$e->getCode() === '23000') {
+                throw new RuntimeException('Username sudah digunakan', 409);
+            }
+            throw $e;
         } catch (Exception $e) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
         }
+    }
+
+    private function designationTable()
+    {
+        return $this->hasTable('employee_designations') ? 'employee_designations' : 'designations';
     }
 
     public function setActive($employeeId, $active)

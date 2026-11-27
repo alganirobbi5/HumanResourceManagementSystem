@@ -70,18 +70,79 @@ class CompanyMasterService
         if (!$this->hasTable($table)) {
             return;
         }
-        $defaults = $this->pdo->query(
-            'SELECT ' . $column . ' FROM ' . $table . ' WHERE company_id = 1 AND status = 1 ORDER BY id LIMIT 2'
-        )->fetchAll(PDO::FETCH_COLUMN);
-        if (!$defaults) {
-            $defaults = $table === 'departments' ? array('IT', 'Coaching') : array('Teacher', 'Programmer');
+        $defaults = $table === 'departments'
+            ? array('Operasional', 'HR & Umum', 'IT & Sistem', 'Keuangan')
+            : array('Staff', 'Supervisor', 'Manager', 'Admin');
+
+        $creatorColumn = $table === 'departments' ? 'create_by' : 'created_by';
+        $columns = $column . ', company_id, status';
+        $placeholders = '?, ?, 1';
+        $extra = array();
+        if ($this->hasColumn($table, $creatorColumn)) {
+            $columns .= ', ' . $creatorColumn;
+            $placeholders .= ', ?';
+            $extra[] = 'system';
+        }
+        if ($this->hasColumn($table, 'create_date')) {
+            $columns .= ', create_date';
+            $placeholders .= ', NOW()';
         }
         $stmt = $this->pdo->prepare(
-            'INSERT INTO ' . $table . ' (' . $column . ', company_id, status) VALUES (?, ?, 1)'
+            'INSERT INTO ' . $table . ' (' . $columns . ') VALUES (' . $placeholders . ')'
         );
         foreach ($defaults as $value) {
-            $stmt->execute(array($value, (int)$companyId));
+            $stmt->execute(array_merge(array($value, (int)$companyId), $extra));
         }
+    }
+
+    private function hasActiveMasters($table, $companyId)
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id FROM ' . $table . ' WHERE company_id = ? AND status = 1 LIMIT 1'
+        );
+        $stmt->execute(array((int)$companyId));
+        return $stmt->fetch() !== false;
+    }
+
+    private function designationTable()
+    {
+        return $this->hasTable('employee_designations') ? 'employee_designations' : 'designations';
+    }
+
+    private function addMaster($table, $column, $companyId, $value, $creatorColumn, $creator)
+    {
+        $value = trim((string)$value);
+        if ($value === '' || strlen($value) > 30) {
+            throw new InvalidArgumentException($column . ' wajib diisi (maksimal 30 karakter)');
+        }
+        if ($companyId === null) {
+            throw new InvalidArgumentException('company_id tidak tersedia');
+        }
+        $duplicate = $this->pdo->prepare(
+            'SELECT id FROM ' . $table . '
+             WHERE company_id = ? AND status = 1 AND LOWER(' . $column . ') = LOWER(?) LIMIT 1'
+        );
+        $duplicate->execute(array((int)$companyId, $value));
+        if ($duplicate->fetch()) {
+            throw new RuntimeException('Data sudah terdaftar', 409);
+        }
+
+        $columns = $column . ', company_id, status';
+        $placeholders = '?, ?, 1';
+        $values = array($value, (int)$companyId);
+        if ($this->hasColumn($table, $creatorColumn)) {
+            $columns .= ', ' . $creatorColumn;
+            $placeholders .= ', ?';
+            $values[] = $creator !== null ? trim((string)$creator) : 'system';
+        }
+        if ($this->hasColumn($table, 'create_date')) {
+            $columns .= ', create_date';
+            $placeholders .= ', NOW()';
+        }
+        $this->pdo->prepare(
+            'INSERT INTO ' . $table . ' (' . $columns . ') VALUES (' . $placeholders . ')'
+        )->execute($values);
+        return (int)$this->pdo->lastInsertId();
     }
 
     public function initialize($companyId)
@@ -97,13 +158,8 @@ class CompanyMasterService
                 $this->seedJam($companyId);
             }
         }
-        foreach (array('departments' => 'name', 'employee_designations' => 'title') as $table => $column) {
-            $check = $this->pdo->prepare('SELECT id FROM ' . $table . ' WHERE company_id = ? LIMIT 1');
-            $check->execute(array((int)$companyId));
-            if (!$check->fetch()) {
-                $this->seedMasters($companyId, $table, $column);
-            }
-        }
+        $this->departments($companyId);
+        $this->designations($companyId);
     }
 
     public function jamFor($companyId)
@@ -174,9 +230,7 @@ class CompanyMasterService
     {
         $companyId = $this->companyValue($companyId);
         if ($companyId !== null) {
-            $check = $this->pdo->prepare('SELECT id FROM departments WHERE company_id = ? LIMIT 1');
-            $check->execute(array((int)$companyId));
-            if (!$check->fetch()) {
+            if (!$this->hasActiveMasters('departments', $companyId)) {
                 $this->seedMasters($companyId, 'departments', 'name');
             }
             $stmt = $this->pdo->prepare('SELECT id, name FROM departments WHERE status = 1 AND company_id = ? ORDER BY name, id');
@@ -190,24 +244,36 @@ class CompanyMasterService
     public function designations($companyId)
     {
         $companyId = $this->companyValue($companyId);
-        $table = $this->hasTable('employee_designations') ? 'employee_designations' : 'designations';
+        $table = $this->designationTable();
         $column = $table === 'designations' ? 'name' : 'title';
         if ($companyId !== null) {
-            $check = $this->pdo->prepare('SELECT id FROM ' . $table . ' WHERE company_id = ? LIMIT 1');
-            $check->execute(array((int)$companyId));
-            if (!$check->fetch()) {
+            if (!$this->hasActiveMasters($table, $companyId)) {
                 $this->seedMasters($companyId, $table, $column);
             }
             $stmt = $this->pdo->prepare(
-                'SELECT id, ' . $column . ' AS name FROM ' . $table . ' WHERE status = 1 AND company_id = ? ORDER BY ' . $column . ', id'
+                'SELECT id, ' . $column . ' AS title, ' . $column . ' AS name FROM ' . $table . '
+                 WHERE status = 1 AND company_id = ? ORDER BY ' . $column . ', id'
             );
             $stmt->execute(array((int)$companyId));
         } else {
             $stmt = $this->pdo->query(
-                'SELECT id, ' . $column . ' AS name FROM ' . $table . ' WHERE status = 1 ORDER BY ' . $column . ', id'
+                'SELECT id, ' . $column . ' AS title, ' . $column . ' AS name FROM ' . $table . '
+                 WHERE status = 1 ORDER BY ' . $column . ', id'
             );
         }
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function addDepartment($companyId, $name, $createBy = null)
+    {
+        return $this->addMaster('departments', 'name', $companyId, $name, 'create_by', $createBy);
+    }
+
+    public function addDesignation($companyId, $title, $createdBy = null)
+    {
+        $table = $this->designationTable();
+        $column = $table === 'designations' ? 'name' : 'title';
+        return $this->addMaster($table, $column, $companyId, $title, 'created_by', $createdBy);
     }
 
     public function firstDepartment($companyId)
