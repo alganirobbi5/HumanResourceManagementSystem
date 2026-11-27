@@ -40,33 +40,37 @@ class CompanyProfileService
         if (!$this->hasColumn('company_profile', 'alamat')) {
             $this->pdo->exec('ALTER TABLE company_profile ADD COLUMN alamat TEXT NULL AFTER company_id');
         }
+        if (!$this->hasColumn('company_profile', 'logo')) {
+            $this->pdo->exec('ALTER TABLE company_profile ADD COLUMN logo LONGTEXT NULL AFTER alamat');
+        }
     }
 
     public function rowForCompany($companyId)
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, company_id, nama_perusahaan, kode_perusahaan, alamat
+            'SELECT id, company_id, nama_perusahaan, kode_perusahaan, alamat, logo
              FROM company_profile WHERE company_id = ? ORDER BY id LIMIT 1'
         );
         $stmt->execute(array((int)$companyId));
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    public function upsert($companyId, $nama, $kode, $alamat = null)
+    public function upsert($companyId, $nama, $kode, $alamat = null, $logo = null)
     {
         $row = $this->rowForCompany($companyId);
         if ($row) {
+            $logoBaru = $logo !== null && $logo !== '' ? $logo : (isset($row['logo']) ? $row['logo'] : null);
             $stmt = $this->pdo->prepare(
-                'UPDATE company_profile SET nama_perusahaan = ?, kode_perusahaan = ?, alamat = ? WHERE id = ?'
+                'UPDATE company_profile SET nama_perusahaan = ?, kode_perusahaan = ?, alamat = ?, logo = ? WHERE id = ?'
             );
-            $stmt->execute(array($nama, $kode, $alamat, (int)$row['id']));
+            $stmt->execute(array($nama, $kode, $alamat, $logoBaru, (int)$row['id']));
             return (int)$row['id'];
         }
         $stmt = $this->pdo->prepare(
-            'INSERT INTO company_profile (nama_perusahaan, kode_perusahaan, company_id, alamat)
-             VALUES (?, ?, ?, ?)'
+            'INSERT INTO company_profile (nama_perusahaan, kode_perusahaan, company_id, alamat, logo)
+             VALUES (?, ?, ?, ?, ?)'
         );
-        $stmt->execute(array($nama, $kode, (int)$companyId, $alamat));
+        $stmt->execute(array($nama, $kode, (int)$companyId, $alamat, $logo));
         return (int)$this->pdo->lastInsertId();
     }
 

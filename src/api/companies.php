@@ -27,7 +27,7 @@ $master = new CompanyMasterService($pdo);
 try {
     if ($method === 'GET') {
         $rows = $pdo->query(
-            'SELECT c.id, c.company_code, c.status, c.created_at,
+            'SELECT c.id, c.company_code, c.status, c.created_at, cp.logo,
                     COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
              FROM companies c
              LEFT JOIN company_profile cp ON cp.company_id = c.id
@@ -40,6 +40,10 @@ try {
         $data = Json::readRequest();
         $code = isset($data['company_code']) ? trim((string)$data['company_code']) : '';
         $name = isset($data['company_name']) ? trim((string)$data['company_name']) : '';
+        $logo = isset($data['logo']) ? trim((string)$data['logo']) : null;
+        if ($logo !== null && !preg_match('/^data:image\//', $logo)) {
+            $logo = null;
+        }
         if ($code === '' || $name === '') {
             Json::error('company_code dan company_name wajib diisi', 422);
         }
@@ -58,7 +62,7 @@ try {
             );
             $stmt->execute(array($code, $name));
             $id = (int)$pdo->lastInsertId();
-            $profiles->upsert($id, $name, $code);
+            $profiles->upsert($id, $name, $code, null, $logo);
             $master->initialize($id);
             $pdo->commit();
         } catch (Exception $e) {
@@ -81,6 +85,62 @@ try {
     if ($method === 'PUT' || $method === 'PATCH') {
         $data = Json::readRequest();
         $id = isset($data['id']) ? (int)$data['id'] : 0;
+        $namaBaru = isset($data['company_name']) ? trim((string)$data['company_name']) : null;
+        $kodeBaru = isset($data['company_code']) ? trim((string)$data['company_code']) : null;
+        $logoBaru = isset($data['logo']) ? trim((string)$data['logo']) : null;
+        if ($logoBaru !== null && !preg_match('/^data:image\//', $logoBaru)) {
+            $logoBaru = null;
+        }
+
+        if ($namaBaru !== null || $kodeBaru !== null || $logoBaru !== null) {
+            if ($namaBaru === null || $namaBaru === '' || $kodeBaru === null || $kodeBaru === '') {
+                $baris = $pdo->prepare('SELECT company_code, company_name FROM companies WHERE id = ? LIMIT 1');
+                $baris->execute(array($id));
+                $existing = $baris->fetch(PDO::FETCH_ASSOC);
+                if (!$existing) {
+                    Json::error('Perusahaan tidak ditemukan', 404);
+                }
+                $namaBaru = $namaBaru !== null && $namaBaru !== '' ? $namaBaru : (string)$existing['company_name'];
+                $kodeBaru = $kodeBaru !== null && $kodeBaru !== '' ? $kodeBaru : (string)$existing['company_code'];
+            }
+            if ($id <= 0 || $namaBaru === '' || $kodeBaru === '') {
+                Json::error('id, company_name, dan company_code wajib diisi', 422);
+            }
+            if (!preg_match('/^[A-Z]{3}-\d{4}$/', $kodeBaru)) {
+                Json::error('Kode harus 8 karakter dengan format CMJ-2026 (3 huruf, "-", 4 angka)', 422);
+            }
+            $cek = $pdo->prepare('SELECT id FROM companies WHERE company_code = ? AND id <> ? LIMIT 1');
+            $cek->execute(array($kodeBaru, $id));
+            if ($cek->fetch()) {
+                Json::error('Kode perusahaan sudah digunakan', 409);
+            }
+            $ada = $pdo->prepare('SELECT id FROM companies WHERE id = ? LIMIT 1');
+            $ada->execute(array($id));
+            if (!$ada->fetch()) {
+                Json::error('Perusahaan tidak ditemukan', 404);
+            }
+            $pdo->beginTransaction();
+            try {
+                $profiles->upsert($id, $namaBaru, $kodeBaru, null, $logoBaru);
+                $profiles->syncCompany($id, $namaBaru, $kodeBaru);
+                $pdo->commit();
+            } catch (Exception $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $e;
+            }
+            $rowStmt = $pdo->prepare(
+            'SELECT c.id, c.company_code, c.status, c.created_at, cp.logo,
+                    COALESCE(NULLIF(cp.nama_perusahaan, ""), c.company_name) AS company_name
+             FROM companies c
+             LEFT JOIN company_profile cp ON cp.company_id = c.id
+             WHERE c.id = ? LIMIT 1'
+            );
+            $rowStmt->execute(array($id));
+            Json::ok('Perusahaan berhasil diperbarui', array('data' => $rowStmt->fetch(PDO::FETCH_ASSOC)));
+        }
+
         $statusInput = isset($data['status']) ? $data['status']
             : (isset($data['action']) ? $data['action'] : null);
         $status = null;
