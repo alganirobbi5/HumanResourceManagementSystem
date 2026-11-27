@@ -89,6 +89,10 @@ class EmployeeAccountService
             $columns .= ', company_id';
             $values[] = $companyId !== null ? (int)$companyId : null;
         }
+        if ($this->hasColumn('users', 'Password')) {
+            $columns .= ', `Password`';
+            $values[] = (string)$password;
+        }
         $stmt = $this->pdo->prepare('INSERT INTO users (' . $columns . ') VALUES (' .
             implode(', ', array_fill(0, count($values), '?')) . ')');
         $stmt->execute($values);
@@ -298,6 +302,10 @@ class EmployeeAccountService
                 if ($password !== null && $password !== '') {
                     $userFields[] = 'password_hash = ?';
                     $userParams[] = password_hash($password, PASSWORD_BCRYPT);
+                    if ($this->hasColumn('users', 'Password')) {
+                        $userFields[] = '`Password` = ?';
+                        $userParams[] = $password;
+                    }
                 }
                 if ($username !== null && $username !== '') {
                     if ($this->userByUsername($username, (int)$user['id'])) {

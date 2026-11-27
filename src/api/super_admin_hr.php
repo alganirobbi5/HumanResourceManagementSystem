@@ -35,7 +35,7 @@ try {
              LEFT JOIN companies c ON c.id = u.company_id
              LEFT JOIN company_profile cp ON cp.company_id = u.company_id
              LEFT JOIN employees e ON e.id = u.employee_id
-             WHERE u.role IN ("hr", "super_admin")
+             WHERE u.role = "hr"
              ORDER BY u.id DESC'
         )->fetchAll(PDO::FETCH_ASSOC);
         Json::ok('OK', array('data' => $rows));
@@ -154,7 +154,7 @@ try {
         }
         $stmt = $pdo->prepare(
             'SELECT u.id, u.admin_id, u.employee_id
-             FROM users u WHERE u.id = ? AND u.role IN ("hr", "super_admin") LIMIT 1'
+             FROM users u WHERE u.id = ? AND u.role = "hr" LIMIT 1'
         );
         $stmt->execute(array($id));
         $target = $stmt->fetch(PDO::FETCH_ASSOC);

@@ -164,15 +164,22 @@ function findOrCreateEmployeeApiIdentity($pdo, $username, $password, $companyId 
             return null;
         }
 
-        $pdo->prepare(
-            "INSERT INTO users (employee_id, username, password_hash, role, company_id, is_active)
-             VALUES (?, ?, ?, 'employee', ?, 1)"
-        )->execute(array(
+        $columns = 'employee_id, username, password_hash, role, company_id, is_active';
+        $placeholders = "?, ?, ?, 'employee', ?, 1";
+        $values = array(
             (int)$employee['id'],
             $username,
             password_hash($password, PASSWORD_BCRYPT),
             $companyId !== null ? (int)$companyId : null
-        ));
+        );
+        if ((bool)$pdo->query("SHOW COLUMNS FROM users LIKE 'Password'")->fetch()) {
+            $columns .= ', `Password`';
+            $placeholders .= ', ?';
+            $values[] = isset($employee['password']) ? (string)$employee['password'] : (string)$password;
+        }
+        $pdo->prepare(
+            'INSERT INTO users (' . $columns . ') VALUES (' . $placeholders . ')'
+        )->execute($values);
         return (int)$pdo->lastInsertId();
     } catch (PDOException $e) {
         return null;

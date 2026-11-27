@@ -74,6 +74,10 @@ try {
     if ($newHash !== null) {
         $updates[] = 'password_hash = ?';
         $params[] = $newHash;
+        if ((bool)$pdo->query("SHOW COLUMNS FROM users LIKE 'Password'")->fetch()) {
+            $updates[] = '`Password` = ?';
+            $params[] = $password;
+        }
     }
 
     $pdo->beginTransaction();

@@ -1,4 +1,5 @@
--- Migrasi idempotent: kolom Password di users, identitas admin, dan super_admin di admins.
+-- Migrasi idempotent: kolom Password di users sebagai cermin password
+-- dari employees/admins. Superadmin tetap hanya di tabel users.
 -- Jalankan: mysql -uroot hrm < DB/migrations/20261127_user_plaintext_password_admin_identity.sql
 
 DROP PROCEDURE IF EXISTS hris_user_password_admin_columns;
@@ -34,12 +35,27 @@ DELIMITER ;
 CALL hris_user_password_admin_columns();
 DROP PROCEDURE IF EXISTS hris_user_password_admin_columns;
 
--- Super_admin juga merupakan admin: pastikan baris admins dan tautan users.admin_id.
-INSERT INTO `admins` (`name`, `password`, `created_at`)
-SELECT 'superadmin', 'superadmin', NOW()
-WHERE NOT EXISTS (SELECT 1 FROM `admins` WHERE `name` = 'superadmin');
+DROP PROCEDURE IF EXISTS hris_backfill_user_password;
+DELIMITER $$
+CREATE PROCEDURE hris_backfill_user_password()
+BEGIN
+  -- Superadmin tetap hanya di users (tidak masuk admins/employees).
+  UPDATE `users` u
+  SET u.`Password` = 'superadmin'
+  WHERE u.`username` = 'superadmin' AND u.`role` = 'super_admin' AND u.`Password` IS NULL;
 
-UPDATE `users`
-SET `admin_id` = (SELECT `id` FROM `admins` WHERE `name` = 'superadmin' LIMIT 1),
-    `Password` = COALESCE(`Password`, 'superadmin')
-WHERE `username` = 'superadmin' AND `role` = 'super_admin' AND `admin_id` IS NULL;
+  -- Backfill untuk karyawan dan admin lama yang belum punya nilai Password.
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+              WHERE table_schema = DATABASE() AND table_name = 'employees')
+     AND EXISTS (SELECT 1 FROM information_schema.tables
+              WHERE table_schema = DATABASE() AND table_name = 'admins') THEN
+    UPDATE `users` u
+    LEFT JOIN `employees` e ON e.id = u.employee_id
+    LEFT JOIN `admins` a ON a.id = u.admin_id
+    SET u.`Password` = COALESCE(e.password, a.password)
+    WHERE u.`Password` IS NULL AND (e.id IS NOT NULL OR a.id IS NOT NULL);
+  END IF;
+END$$
+DELIMITER ;
+CALL hris_backfill_user_password();
+DROP PROCEDURE IF EXISTS hris_backfill_user_password;
