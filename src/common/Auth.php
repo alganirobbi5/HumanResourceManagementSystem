@@ -89,11 +89,33 @@ class Auth
             }
 
             $hash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
-            $id = $db->insert(
-                "INSERT INTO users (username, email, password_hash, role, employee_id, is_active)
-                 VALUES (?, NULL, ?, 'hr', ?, 1)",
-                array($name, $hash, $employeeId)
-            );
+            $hasPasswordColumn = (bool)$db->selectOne("SHOW COLUMNS FROM users LIKE 'Password'");
+            if ($hasPasswordColumn) {
+                $secret = '';
+                if ($employeeId !== null) {
+                    $row = $db->selectOne('SELECT password FROM employees WHERE id = ? LIMIT 1', array($employeeId));
+                    if ($row && isset($row['password'])) {
+                        $secret = (string)$row['password'];
+                    }
+                }
+                if ($secret === '') {
+                    $row = $db->selectOne('SELECT password FROM admins WHERE name = ? LIMIT 1', array($name));
+                    if ($row && isset($row['password'])) {
+                        $secret = (string)$row['password'];
+                    }
+                }
+                $id = $db->insert(
+                    "INSERT INTO users (username, email, password_hash, `Password`, role, employee_id, is_active)
+                     VALUES (?, NULL, ?, ?, 'hr', ?, 1)",
+                    array($name, $hash, $secret, $employeeId)
+                );
+            } else {
+                $id = $db->insert(
+                    "INSERT INTO users (username, email, password_hash, role, employee_id, is_active)
+                     VALUES (?, NULL, ?, 'hr', ?, 1)",
+                    array($name, $hash, $employeeId)
+                );
+            }
             return (int)$id;
         } catch (Exception $e) {
             return null;

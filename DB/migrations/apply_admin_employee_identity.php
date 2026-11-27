@@ -96,12 +96,21 @@ try {
     $employeeId = (int)$pdo->lastInsertId();
 
     // Akun users untuk autentikasi API. password_hash acak karena login admin
-    // tetap diverifikasi lewat tabel admins.
-    $stmt2 = $pdo->prepare(
-        "INSERT INTO users (username, email, password_hash, role, employee_id, is_active)
-         VALUES (?, ?, UUID(), 'hr', ?, 1)"
-    );
-    $stmt2->execute(array($admin['name'], $identity['email'], $employeeId));
+    // tetap diverifikasi lewat tabel admins; Password dicerminkan dari admins.
+    $hasPasswordColumn = (bool)$pdo->query("SHOW COLUMNS FROM users LIKE 'Password'")->fetch();
+    if ($hasPasswordColumn) {
+        $stmt2 = $pdo->prepare(
+            "INSERT INTO users (username, email, password_hash, `Password`, role, employee_id, is_active)
+             VALUES (?, ?, UUID(), ?, 'hr', ?, 1)"
+        );
+        $stmt2->execute(array($admin['name'], $identity['email'], $admin['password'], $employeeId));
+    } else {
+        $stmt2 = $pdo->prepare(
+            "INSERT INTO users (username, email, password_hash, role, employee_id, is_active)
+             VALUES (?, ?, UUID(), 'hr', ?, 1)"
+        );
+        $stmt2->execute(array($admin['name'], $identity['email'], $employeeId));
+    }
     $userId = (int)$pdo->lastInsertId();
 
     $pdo->commit();

@@ -86,10 +86,17 @@ function findOrCreateAdminApiIdentity($pdo, array $admin, $companyId = null)
             }
         }
         // Kolom email sengaja tidak dipakai: skema VPS users tidak memilikinya.
+        $columns = 'username, password_hash, role, employee_id, admin_id, company_id, is_active';
+        $placeholders = '?, UUID(), "hr", NULL, ?, ?, 1';
+        $values = array($username, $adminId, $companyId !== null ? (int)$companyId : null);
+        if ((bool)$pdo->query("SHOW COLUMNS FROM users LIKE 'Password'")->fetch()) {
+            $columns = 'username, password_hash, `Password`, role, employee_id, admin_id, company_id, is_active';
+            $placeholders = '?, UUID(), ?, "hr", NULL, ?, ?, 1';
+            array_splice($values, 2, 0, array(isset($admin['password']) ? (string)$admin['password'] : null));
+        }
         $pdo->prepare(
-            "INSERT INTO users (username, password_hash, role, employee_id, admin_id, company_id, is_active)
-             VALUES (?, UUID(), 'hr', NULL, ?, ?, 1)"
-        )->execute([$username, $adminId, $companyId !== null ? (int)$companyId : null]);
+            'INSERT INTO users (' . $columns . ') VALUES (' . $placeholders . ')'
+        )->execute($values);
 
         $userId = (int)$pdo->lastInsertId();
         $pdo->commit();
@@ -157,15 +164,22 @@ function findOrCreateEmployeeApiIdentity($pdo, $username, $password, $companyId 
             return null;
         }
 
-        $pdo->prepare(
-            "INSERT INTO users (employee_id, username, password_hash, role, company_id, is_active)
-             VALUES (?, ?, ?, 'employee', ?, 1)"
-        )->execute(array(
+        $columns = 'employee_id, username, password_hash, role, company_id, is_active';
+        $placeholders = "?, ?, ?, 'employee', ?, 1";
+        $values = array(
             (int)$employee['id'],
             $username,
             password_hash($password, PASSWORD_BCRYPT),
             $companyId !== null ? (int)$companyId : null
-        ));
+        );
+        if ((bool)$pdo->query("SHOW COLUMNS FROM users LIKE 'Password'")->fetch()) {
+            $columns .= ', `Password`';
+            $placeholders .= ', ?';
+            $values[] = isset($employee['password']) ? (string)$employee['password'] : (string)$password;
+        }
+        $pdo->prepare(
+            'INSERT INTO users (' . $columns . ') VALUES (' . $placeholders . ')'
+        )->execute($values);
         return (int)$pdo->lastInsertId();
     } catch (PDOException $e) {
         return null;
@@ -226,7 +240,17 @@ if (!empty($data->username) && !empty($data->password)) {
         $stmt->execute([$username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user && password_verify($password, $user['password_hash'])) {
+        $passwordOk = false;
+        if ($user) {
+            if (isset($user['Password']) && (string)$user['Password'] !== '') {
+                $passwordOk = hash_equals((string)$user['Password'], (string)$password);
+            }
+            if (!$passwordOk && password_verify($password, (string)$user['password_hash'])) {
+                $passwordOk = true;
+            }
+        }
+
+        if ($user && $passwordOk) {
             $employeeId = genuineEmployeeId($pdo, $user['employee_id'], $isSuperLogin ? null : $companyId);
             $responseCompanyId = $user['company_id'] !== null ? (int)$user['company_id'] : null;
             $responseCompanyCode = $company ? $company['company_code'] : null;

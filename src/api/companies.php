@@ -2,7 +2,7 @@
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Authorization");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -111,6 +111,34 @@ try {
         );
         $rowStmt->execute(array($id));
         Json::ok('Status perusahaan berhasil diperbarui', array('data' => $rowStmt->fetch(PDO::FETCH_ASSOC)));
+    }
+
+    if ($method === 'DELETE') {
+        $data = Json::readRequest();
+        $id = isset($data['id']) ? (int)$data['id'] : 0;
+        if ($id <= 0) {
+            Json::error('id wajib diisi', 422);
+        }
+        $stmt = $pdo->prepare('SELECT id FROM companies WHERE id = ? LIMIT 1');
+        $stmt->execute(array($id));
+        if (!$stmt->fetch()) {
+            Json::error('Perusahaan tidak ditemukan', 404);
+        }
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('DELETE FROM company_profile WHERE company_id = ?')
+                ->execute(array($id));
+            $pdo->prepare('DELETE FROM users WHERE company_id = ?')
+                ->execute(array($id));
+            $pdo->prepare('DELETE FROM companies WHERE id = ?')->execute(array($id));
+            $pdo->commit();
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+        Json::ok('Perusahaan berhasil dihapus');
     }
 } catch (PDOException $e) {
     Json::error('Gagal mengelola data perusahaan', 500);
