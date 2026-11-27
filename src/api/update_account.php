@@ -22,6 +22,11 @@ $hasPassword = array_key_exists('password', $data);
 $username = $hasUsername ? trim((string)$data['username']) : null;
 $password = $hasPassword ? (string)$data['password'] : null;
 $currentPassword = isset($data['current_password']) ? (string)$data['current_password'] : '';
+$role = strtolower((string)Auth::role());
+
+if ($hasUsername && in_array($role, array('employee', 'leader'), true)) {
+    Json::error('Akun karyawan tidak diizinkan mengubah username, hubungi HR', 403);
+}
 
 $phone = null;
 foreach (array('phone', 'mobile_no', 'contact', 'no_hp', 'whatsapp', 'number') as $phoneKey) {
@@ -103,6 +108,14 @@ try {
         if ($username !== null && $user['employee_id']) {
             $pdo->prepare('UPDATE employees SET user_name = ? WHERE id = ?')
                 ->execute(array($username, (int)$user['employee_id']));
+        }
+        if ($username !== null && !empty($user['admin_id'])
+            && (Auth::isHr() || Auth::isSuperAdmin())) {
+            $adminTable = $pdo->query("SHOW TABLES LIKE 'admins'");
+            if ($adminTable && $adminTable->fetch()) {
+                $pdo->prepare('UPDATE admins SET name = ? WHERE id = ?')
+                    ->execute(array($username, (int)$user['admin_id']));
+            }
         }
         if ($phone !== null && $user['employee_id']) {
             $phoneColumn = 'mobile_no';

@@ -285,6 +285,26 @@ class Auth
             : null;
     }
 
+    public static function role()
+    {
+        $u = self::identify();
+        if (!$u || !isset($u['role'])) {
+            return null;
+        }
+        $role = strtolower(trim((string)$u['role']));
+        if ($role === 'employee' || $role === '') {
+            try {
+                require_once __DIR__ . '/../service/LeaveLeaderService.php';
+                $leaders = new LeaveLeaderService();
+                if ($leaders->isLeader((int)$u['id'], self::companyId())) {
+                    return 'leader';
+                }
+            } catch (Exception $e) {
+            }
+        }
+        return $role;
+    }
+
     public static function isHr()
     {
         $u = self::identify();

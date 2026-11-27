@@ -20,6 +20,10 @@ $employee_id_from_client = isset($_GET['employee_id']) ? $_GET['employee_id'] : 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = Json::readRequest();
+    if (array_key_exists('username', $body)
+        && in_array(strtolower((string)Auth::role()), array('employee', 'leader'), true)) {
+        Json::error('Akun karyawan tidak diizinkan mengubah username, hubungi HR', 403);
+    }
     $hasEmail = array_key_exists('email', $body);
     $email = $hasEmail ? trim((string)$body['email']) : '';
     $phone = null;
